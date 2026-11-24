@@ -28,6 +28,7 @@ public class NotificationService : IHostedService
     private readonly INotificationManager _notificationManager;
     private readonly NotificationSettings _notificationSettings;
     private readonly Func<bool> _ringAlertsEnabled;
+    private readonly bool _usePrimaryPopups;
     
     private readonly ISubscriber<DeviceBatteryUpdatedMessage> _batterySubscriber;
     private readonly ISubscriber<SystemSuspendingMessage> _suspendSubscriber;
@@ -53,6 +54,7 @@ public class NotificationService : IHostedService
         ISubscriber<SystemResumingMessage> resumeSubscriber)
         : this(notificationManager, appSettings, batterySubscriber, suspendSubscriber, resumeSubscriber, () => RingConfig.Current.Alerts)
     {
+        _usePrimaryPopups = true;
     }
 
     internal NotificationService(
@@ -265,6 +267,16 @@ public class NotificationService : IHostedService
         ShowLowBatteryNotification(deviceName, batteryPercent, currentThreshold.Value);
     }
 
+    private void ShowPopup(string title,string message,NotificationType type,TimeSpan expiration)
+    {
+        if(_usePrimaryPopups)
+            PrimaryNotificationPopup.Show(title,message,type switch {
+                NotificationType.Error=>"#A92828",NotificationType.Warning=>"#9A520C",
+                NotificationType.Success=>"#237344",_=>"#356A95"},expiration);
+        else
+            _notificationManager.Show(title,message,type,areaName:"",expirationTime:expiration);
+    }
+
     private void ShowLowBatteryNotification(string deviceName, int batteryPercent, int threshold)
     {
         // Check if notifications are suspended
@@ -281,13 +293,7 @@ public class NotificationService : IHostedService
         var title = $"{deviceName} - Battery Low";
         var message = $"Battery level: {batteryPercent}%";
 
-        _notificationManager.Show(
-            title,
-            message,
-            notificationType,
-            areaName: "",
-            expirationTime: TimeSpan.MaxValue
-        );
+        ShowPopup(title, message, notificationType, TimeSpan.MaxValue);
     }
 
     private void ShowBatteryChargedNotification(string deviceName, int batteryPercent)
@@ -305,13 +311,7 @@ public class NotificationService : IHostedService
         var title = batteryPercent == 100 ? $"{deviceName} - Battery Full" : $"{deviceName} - Battery almost full (charging)";
         var message = $"Battery level: {batteryPercent}%";
 
-        _notificationManager.Show(
-            title,
-            message,
-            NotificationType.Success,
-            areaName: "",
-            expirationTime: TimeSpan.FromSeconds(5)
-        );
+        ShowPopup(title, message, NotificationType.Success, TimeSpan.FromSeconds(5));
     }
 
     private void ShowDeviceOfflineNotification(string deviceName, string deviceId)
@@ -347,13 +347,7 @@ public class NotificationService : IHostedService
             var title = $"{deviceName} - Device Offline";
             var message = "Device has been turned off or disconnected";
 
-            _notificationManager.Show(
-                title,
-                message,
-                NotificationType.Warning,
-                areaName: "",
-                expirationTime: TimeSpan.FromSeconds(5)
-            );
+            ShowPopup(title, message, NotificationType.Warning, TimeSpan.FromSeconds(5));
         });
     }
 
@@ -386,12 +380,6 @@ public class NotificationService : IHostedService
         var title = $"{deviceName} - Device Online";
         var message = $"Device is back online (Battery: {batteryPercent}%)";
 
-        _notificationManager.Show(
-            title,
-            message,
-            NotificationType.Information,
-            areaName: "",
-            expirationTime: TimeSpan.FromSeconds(5)
-        );
+        ShowPopup(title, message, NotificationType.Information, TimeSpan.FromSeconds(5));
     }
 }
