@@ -40,6 +40,27 @@ public class LogitechModelMergeTests
         Assert.Equal(2,DeviceIdentityManager.Group([a with{PhysicalId="serial:a"},b with{PhysicalId="serial:b"}],new()).Length);
         Assert.Equal(2,DeviceIdentityManager.Group([a,b with{Name="PRO X SUPERLIGHT 2 DEX"}],new()).Length);
     }
+    [Fact] public void ThreeSourcesFromOneMouseMergeWithoutDiscardingSource()
+    {
+        var c=new RingPreferences();
+        var native=Mouse("Native","serial-one");
+        var ghub=Mouse("GHub","GHUB.pro_x_2_wireless_mouse_ext1");
+        var phantom=Mouse("GHub","GHUB.pro_x_2_wireless_mouse") with{Level=null,Status="离线",Updated=DateTimeOffset.MinValue};
+        var group=Assert.Single(DeviceIdentityManager.Group([native,ghub,phantom],c));
+        Assert.Equal(3,group.Sources.Length);
+        Assert.Equal(92,group.Reading.Level);
+        Assert.Single(DeviceIdentityManager.Group([native with{Level=null,Status="离线"},ghub with{Level=null,Status="离线"},phantom],c));
+        Assert.Equal(3,DeviceIdentityManager.Group([native,ghub,phantom with{Level=65,Status="已连接",Updated=DateTimeOffset.UtcNow}],new()).Length);
+        Assert.Equal(4,DeviceIdentityManager.Group([native,Mouse("Native","serial-two"),ghub,phantom],new()).Length);
+    }
+    [Fact] public void ManualPairCanAbsorbAnUnreportedModeAlias()
+    {
+        var c=new RingPreferences{AutoDeduplicate=false};
+        var a=Mouse("Native");var b=Mouse("GHub","GHUB.pro_x_2_wireless_mouse_ext1");
+        var alias=Mouse("GHub","GHUB.pro_x_2_wireless_mouse") with{Level=null,Status="离线",Updated=DateTimeOffset.MinValue};
+        var pair=DeviceIdentityManager.Group([a,b],c);DeviceIdentityManager.Merge(c,pair[0],pair[1]);c.AutoDeduplicate=true;
+        Assert.Equal(3,Assert.Single(DeviceIdentityManager.Group([a,b,alias],c)).Sources.Length);
+    }
     [Fact] public void ExplicitSplitAndManualLinkAreRespectedOnRefresh()
     {
         var c=new RingPreferences();var a=Mouse("Native");var b=Mouse("GHub");

@@ -33,6 +33,9 @@ public partial class App : Application
     private static Mutex? _mutex;
     private bool _hasHandle = false; // Track ownership
     private IHost? _host; // DI container for accessing services
+    private Task? _hostStart;
+    private bool _exitRequested;
+    private readonly CancellationTokenSource _startupCancellation=new();
     private IEnumerable<IDeviceManager>? _deviceManagers; // Cached device managers for wake handler
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
     private TaskbarBatteryWindow? _taskbarBatteries;
@@ -178,10 +181,17 @@ public partial class App : Application
 
         var trayViewModel=host.Services.GetRequiredService<NotifyIconViewModel>();
         _taskbarBatteries = new TaskbarBatteryWindow(trayViewModel);
+        _taskbarBatteries.Closed+=(_,_)=>_taskbarBatteries=null;
         host.Services.GetRequiredService<MainTaskbarIconWrapper>().Initialize(trayViewModel,()=>_taskbarBatteries?.ShowSettings(),()=>_taskbarBatteries?.Rescan(),()=>_taskbarBatteries?.ShowDevices(),()=>_taskbarBatteries?.OnlineCount??0);
 
-        await host.RunAsync();
-        Dispatcher.InvokeShutdown();
+        // WPF owns the dispatcher lifetime; stop/dispose the host explicitly.
+        host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(
+            ()=>Dispatcher.BeginInvoke(new Action(RequestExit)));
+        try{
+            _hostStart=host.StartAsync(_startupCancellation.Token);
+            await _hostStart;
+        }catch(OperationCanceledException) when(_exitRequested){}
+        catch(Exception ex){DiagnosticLogger.LogError("Host start failed: "+ex.Message);RequestExit();}
     }
 
     private void AppExtensions_PowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
@@ -238,46 +248,58 @@ public partial class App : Application
         }
     }
 
+    internal async void RequestExit()
+    {
+        if(!Dispatcher.CheckAccess()){Dispatcher.BeginInvoke(new Action(RequestExit));return;}
+        if(_exitRequested)return;
+        _exitRequested=true;
+        var watch=System.Diagnostics.Stopwatch.StartNew();
+        DiagnosticLogger.Log("Fast exit requested");
+        var host=_host;_host=null;
+        // Cancel the owned HID supervisor before a slower G HUB shutdown can block.
+        try{host?.Services.GetService<LGSTrayHIDManager>()?.RequestStop();}catch(Exception ex){DiagnosticLogger.LogWarning("HID stop signal: "+ex.Message);}
+        CloseUi(host);
+        DiagnosticLogger.Log($"Exit UI closed in {watch.ElapsedMilliseconds} ms");
+        _startupCancellation.Cancel();
+        if(host!=null){
+            try{
+                // Dispatcher remains responsive while hosted services finish. The HID child
+                // also monitors its parent PID, so it exits if this process terminates.
+                await Task.Run(async ()=>{
+                    using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    try{
+                        if(_hostStart!=null)try{await _hostStart.WaitAsync(stop.Token);}catch(OperationCanceledException){}catch(Exception ex){DiagnosticLogger.LogWarning("Host start during exit: "+ex.Message);}
+                        await host.StopAsync(stop.Token);
+                        DiagnosticLogger.Log($"Host stopped in {watch.ElapsedMilliseconds} ms");
+                    }catch(Exception ex){DiagnosticLogger.LogWarning("Host stop: "+ex.Message);}
+                    host.Dispose();
+                    DiagnosticLogger.Log($"Host disposed in {watch.ElapsedMilliseconds} ms");
+                }).WaitAsync(TimeSpan.FromSeconds(3));
+            }catch(TimeoutException){DiagnosticLogger.LogWarning("Host cleanup exceeded 3 seconds; finishing application exit");}
+            catch(Exception ex){DiagnosticLogger.LogWarning("Host cleanup: "+ex.Message);}
+        }
+        DiagnosticLogger.Log($"Exit total before shutdown: {watch.ElapsedMilliseconds} ms");
+        Shutdown();
+    }
+    private void CloseUi(IHost? host)
+    {
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= AppExtensions_PowerModeChanged;
+        _taskbarBatteries?.Close();_taskbarBatteries=null;
+        PrimaryNotificationPopup.CloseAll();
+        // The WPF tray icon must be disposed on its dispatcher, not a worker.
+        try{host?.Services.GetService<MainTaskbarIconWrapper>()?.Dispose();}catch(Exception ex){DiagnosticLogger.LogWarning("Tray cleanup: "+ex.Message);}
+        try{_powerWindow?.Close();}catch(InvalidOperationException){}
+        _powerWindow=null;
+    }
     protected override void OnExit(ExitEventArgs e)
     {
         DiagnosticLogger.Log("Application exiting...");
-
-        Microsoft.Win32.SystemEvents.PowerModeChanged -= AppExtensions_PowerModeChanged;
-
-        _taskbarBatteries?.Close();
-        _taskbarBatteries = null;
-
-        // Close power notification window (cleans up WndProc hook and unregisters notifications)
-        DiagnosticLogger.Log("Closing power notification window...");
-        _powerWindow?.Close();
-        _powerWindow = null;
-        DiagnosticLogger.Log("Power notification window closed");
-
-        // Dispose the host - StopAsync is already called by host.RunAsync() when app shuts down
-        // We only need to dispose here to clean up resources
-        if (_host != null)
-        {
-            DiagnosticLogger.Log("Disposing host...");
-            try
-            {
-                // Run dispose on thread pool with timeout to avoid deadlocks
-                var disposeTask = Task.Run(() => _host?.Dispose());
-                if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
-                {
-                    DiagnosticLogger.LogWarning("Host dispose timed out after 5 seconds - forcing exit");
-                }
-                else
-                {
-                    DiagnosticLogger.Log("Host disposed");
-                }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticLogger.LogError($"Error disposing host: {ex.Message}");
-            }
-            _host = null;
-        }
-
+        var host=_host;_host=null;
+        try{host?.Services.GetService<LGSTrayHIDManager>()?.RequestStop();}catch{}
+        CloseUi(host);
+        // Session shutdown can bypass RequestExit. Never synchronously wait on
+        // background disposal from a dispatcher that is already shutting down.
+        if(host!=null)_=Task.Run(async()=>{try{using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(2));await host.StopAsync(stop.Token);host.Dispose();}catch{}});
         // ONLY release if we actually acquired it in OnStartup
         if (_hasHandle)
         {

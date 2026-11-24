@@ -24,9 +24,11 @@ internal sealed class NativeTaskbarSlot : IDisposable
     private Task<int>? _attach;
     private uint _attemptedPid;
     private bool _disposed;
-    internal string Status { get; private set; } = "等待设备连接";
+    private string _status="等待设备连接";
+    internal string Status {get=>_status;private set{if(_status==value)return;_status=value;DiagnosticLogger.Log("NativeLayout status: "+value);}}
     internal string PlacementStatus { get; private set; } = "";
-    internal void ReportPlacement(string value)=>PlacementStatus=value;
+    internal void ReportPlacement(string value){if(PlacementStatus==value)return;PlacementStatus=value;DiagnosticLogger.Log("NativeLayout placement: "+value);}
+    private bool? _lastLeft;
     internal bool Acknowledged { get; private set; }
 
     // Restrict the first experimental revision to known horizontal Windows 11 x64 builds.
@@ -36,21 +38,25 @@ internal sealed class NativeTaskbarSlot : IDisposable
     internal void Update(double logicalWidth)
     {
         if (_disposed) return;
-        PlacementStatus="";
         var c=RingConfig.Current;
+        if(_lastLeft!=c.Left){
+            _lastLeft=c.Left;
+            DiagnosticLogger.Log($"NativeLayout mode: {(c.Left?"Left":"Right")}, Windows build {Environment.OSVersion.Version.Build}, monitors {GetSystemMetrics(80)}, architecture {RuntimeInformation.ProcessArchitecture}");
+        }
+        if(!c.Left)ReportPlacement("");
         int wanted=c.Left?TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X).total:0;
         if(wanted==0){ Release();_blockedWidth=0;_lastWanted=0;Status=c.Left?"等待设备连接 · 已释放占位":"靠右 · 原生左侧占位已释放";return; }
         if(!SupportedBuild(Environment.OSVersion.Version.Build)||RuntimeInformation.ProcessArchitecture!=Architecture.X64){Release();Status=$"Windows build {Environment.OSVersion.Version.Build} 或架构不在原生支持范围 · 安全定位";return;}
         var bar=FindWindow("Shell_TrayWnd",null);GetWindowThreadProcessId(bar,out uint pid);
         if(bar==0||pid==0){Release();Status="等待 Windows 任务栏";return;}
         if(pid!=_explorerPid){Release();_explorerPid=pid;_blockedWidth=0;_lastWanted=0;_attemptedPid=0;_attach=null;}
-        if(wanted!=_lastWanted){_lastWanted=wanted;_blockedWidth=0;_unusableSince=0;}
+        if(wanted!=_lastWanted){_lastWanted=wanted;_blockedWidth=0;_unusableSince=0;DiagnosticLogger.Log($"NativeLayout request: {wanted} DIP, Explorer PID {pid}");}
         if(_blockedWidth==wanted){Status=_blockedReason+"（切换左右可重试）";return;}
         string dll=Path.Combine(AppContext.BaseDirectory,"NativeLayout.dll");
         if(!File.Exists(dll)){Release();Status="NativeLayout.dll 缺失 · 安全定位";return;}
         try{
             if(_view==null){
-                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.2.{pid}",32,MemoryMappedFileAccess.ReadWrite);
+                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.3.{pid}",32,MemoryMappedFileAccess.ReadWrite);
                 _view=_map.CreateViewAccessor(0,32,MemoryMappedFileAccess.ReadWrite);
                 _request=0;_requestedAt=Environment.TickCount64;
                 _view.Write(16,0);_view.Write(20,0);_view.Write(24,0L);
@@ -63,11 +69,13 @@ internal sealed class NativeTaskbarSlot : IDisposable
             if(Acknowledged){Status="原生模块已确认布局 · 正在核验实际位置";return;}
             if(reply>=_requestedAt&&reply<=now&&now-reply<1500){
                 if(state<0){Block(wanted,"原生控件不兼容或存在布局冲突 · 安全定位");return;}
-                Status="原生模块已连接 · 等待布局";return;
+                Status=state switch {2=>"原生模块已连接 · 未找到主任务栏 Start 控件",3=>"原生模块已连接 · 等待原生宽度生效",4=>"原生模块已连接 · 等待 Start 位移生效",_=>"原生模块已连接 · 等待布局"};
+                return;
             }
             // Give an already-loaded provider time to acknowledge a restarted application.
             if(_attemptedPid!=pid&&now-_requestedAt>=750){
                 _attemptedPid=pid;
+                DiagnosticLogger.Log($"NativeLayout attaching to Explorer PID {pid}");
                 _attach=Task.Run(()=>Attach(pid,dll));
             }
             if(_attach?.IsCompletedSuccessfully==true&&_attach.Result<0){Status=$"原生接口连接失败 (0x{_attach.Result:X8}) · 安全定位";return;}

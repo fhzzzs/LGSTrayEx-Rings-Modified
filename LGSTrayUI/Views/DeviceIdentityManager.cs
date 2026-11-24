@@ -21,6 +21,28 @@ internal static class DeviceIdentityManager
         if(d.Type==DeviceType.Headset&&(n is "PROX2LIGHTSPEED" or "PROX2LIGHTSPEEDGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSHEADSET"))return "PROX2LIGHTSPEED";
         return n;
     }
+    // A base G HUB model and its _ext1 variant can describe the wireless/USB
+    // modes of one unit. Never infer identity for two reporting G HUB records,
+    // multiple native units, distinct serials or arbitrary same-name devices.
+    private static string? GHubModeFamily(TaskbarBattery d){
+        if(LogitechProvider(d)!="GHub")return null;
+        string id=d.Key.Split(':',5)[4];
+        if(!id.StartsWith("GHUB.",StringComparison.OrdinalIgnoreCase))return null;
+        return id.EndsWith("_ext1",StringComparison.OrdinalIgnoreCase)?id[..^5]:id;
+    }
+    private static bool CompatibleModelSources(TaskbarBattery[] rows){
+        int native=rows.Count(d=>LogitechProvider(d)=="Native");
+        var ghub=rows.Where(d=>LogitechProvider(d)=="GHub").ToArray();
+        if(native>1||ghub.Length<1||ghub.Length>2)return false;
+        if(rows.Select(d=>d.PhysicalId).Where(s=>!string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.Ordinal).Count()>1)return false;
+        if(ghub.Length==1)return native==1;
+        var family=GHubModeFamily(ghub[0]);
+        if(family==null||!string.Equals(family,GHubModeFamily(ghub[1]),StringComparison.OrdinalIgnoreCase))return false;
+        string a=ghub[0].Key.Split(':',5)[4],b=ghub[1].Key.Split(':',5)[4];
+        if(string.Equals(a,b,StringComparison.OrdinalIgnoreCase))return false;
+        // A second source which has ever supplied a reading is not a phantom.
+        return ghub.Count(d=>d.Level.HasValue||d.Charging||d.Updated!=DateTimeOffset.MinValue)<=1;
+    }
     internal static DeviceGroup[] Group(IEnumerable<TaskbarBattery> readings,RingPreferences c){
         var raw=readings.GroupBy(d=>d.Key,StringComparer.Ordinal).Select(g=>Best(g,null)).ToArray();
         var byKey=raw.ToDictionary(d=>d.Key,StringComparer.Ordinal);
@@ -44,20 +66,28 @@ internal static class DeviceIdentityManager
         if(c.AutoDeduplicate){
             // Include remembered offline records: rescan and reconnect must not undo grouping.
             foreach(var set in raw.Where(d=>LogitechProvider(d)!=null).GroupBy(d=>(d.Type,Model:LogitechModel(d)))){
-                var pair=set.ToArray();if(set.Key.Model.Length==0||pair.Length!=2||LogitechProvider(pair[0])==LogitechProvider(pair[1]))continue;
-                var a=pair[0];var b=pair[1];
-                if(c.SeparateDeviceSources.Contains(a.Key)||c.SeparateDeviceSources.Contains(b.Key))continue;
-                if(!string.IsNullOrWhiteSpace(a.PhysicalId)&&!string.IsNullOrWhiteSpace(b.PhysicalId)&&a.PhysicalId!=b.PhysicalId)continue;
-                var ar=roots[a.Key];var br=roots[b.Key];if(ar==br)continue;
-                if(ar!=a.Key||br!=b.Key||roots.Values.Count(k=>k==ar)!=1||roots.Values.Count(k=>k==br)!=1||c.DeviceAliases.ContainsValue(ar)||c.DeviceAliases.ContainsValue(br)||c.AutomaticAliases.ContainsValue(ar)||c.AutomaticAliases.ContainsValue(br))continue;
-                // Prefer the established root from a previous grouping; persist only a model
-                // preference, never a guessed physical alias. Re-evaluate ambiguity each refresh.
-                var root=new[]{ar,br}.OrderByDescending(k=>c.ModelGroupRoots.Contains(k)).ThenBy(k=>c.Order.IndexOf(k) is int n&&n>=0?n:int.MaxValue).ThenBy(k=>k,StringComparer.Ordinal).First();
-                var secondary=root==ar?br:ar;
-                Inherit(c,secondary,root);
-                if(c.Hidden.Contains(secondary)&&!c.Hidden.Contains(root))c.Hidden.Add(root);
+                var pair=set.ToArray();
+                if(set.Key.Model.Length==0||!CompatibleModelSources(pair))continue;
+                if(pair.Any(d=>c.SeparateDeviceSources.Contains(d.Key)))continue;
+                var keys=pair.Select(d=>roots[d.Key]).Distinct(StringComparer.Ordinal).ToArray();
+                if(keys.Length<2)continue;
+                var memberKeys=pair.Select(d=>d.Key).ToHashSet(StringComparer.Ordinal);
+                // Respect explicit links; only extend a group when every linked member
+                // belongs to this unambiguous model family. Do not merge two user groups.
+                if(roots.Any(p=>keys.Contains(p.Value)&&!memberKeys.Contains(p.Key)))continue;
+                var explicitRoots=keys.Where(k=>c.DeviceAliases.ContainsValue(k)).ToArray();
+                if(explicitRoots.Length>1)continue;
+                var root=keys.OrderByDescending(k=>explicitRoots.Contains(k))
+                    .ThenByDescending(k=>c.ModelGroupRoots.Contains(k))
+                    .ThenBy(k=>c.Order.IndexOf(k) is int n&&n>=0?n:int.MaxValue)
+                    .ThenBy(k=>k,StringComparer.Ordinal).First();
+                foreach(var secondary in keys.Where(k=>k!=root)){
+                    Inherit(c,secondary,root);
+                    if(c.Hidden.Contains(secondary)&&!c.Hidden.Contains(root))c.Hidden.Add(root);
+                }
                 if(!c.ModelGroupRoots.Contains(root))c.ModelGroupRoots.Add(root);
-                roots[secondary]=root;inferred.Add(root);
+                foreach(var d in pair)roots[d.Key]=root;
+                inferred.Add(root);
             }
         }
         return raw.GroupBy(d=>roots[d.Key],StringComparer.Ordinal).Select(g=>{

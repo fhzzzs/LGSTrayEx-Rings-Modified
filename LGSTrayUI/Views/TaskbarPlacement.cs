@@ -70,7 +70,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
            !nonStart.Any(b=>b.right>leading&&b.left<anchor) && reserve.total>0 &&
            TryReserved(anchor,end,width,(int)Math.Round(reserve.before*scale),(int)Math.Round(reserve.after*scale),occupied,out int nativeX)){
             NativeTaskbarSlot.Instance.Verify(true);
-            NativeTaskbarSlot.Instance.ReportPlacement("实际位置：开始按钮右侧 · 已核验空位");
+            NativeTaskbarSlot.Instance.ReportPlacement(NativeTaskbarSlot.Instance.Acknowledged?"实际位置：原生占位已验证 · 开始按钮右侧":"实际位置：现有开始按钮右侧空位（非原生占位）");
             placement=new(nativeX,y,width,height,scale);return true;
         }
         // Prefer a real, independently verified left-edge gap even when the native

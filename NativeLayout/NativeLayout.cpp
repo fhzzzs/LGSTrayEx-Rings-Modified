@@ -31,7 +31,7 @@ struct alignas(8) Lease {
     volatile LONG64 reply;
 };
 static_assert(sizeof(Lease)==32 && offsetof(Lease,tick)==8 && offsetof(Lease,reply)==24);
-std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout.2."+std::to_wstring(GetCurrentProcessId());}
+std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout.3."+std::to_wstring(GetCurrentProcessId());}
 HWND PrimaryBar(){HWND h=FindWindowW(L"Shell_TrayWnd",nullptr);DWORD pid=0;if(h)GetWindowThreadProcessId(h,&pid);return pid==GetCurrentProcessId()?h:nullptr;}
 // Access these UI objects exclusively from the primary taskbar UI thread.
 FrameworkElement start{nullptr};
@@ -67,7 +67,7 @@ bool ValidStart(FrameworkElement const& el){
 }
 // The same Explorer UI thread can own multiple taskbars. Identify the primary
 // Start button by its actual automation screen bounds, never by thread alone.
-bool OnPrimaryBar(FrameworkElement const& el,RECT const& bounds){
+bool TryPrimaryBounds(FrameworkElement const& el,RECT const& bounds,Windows::Foundation::Rect& result){
     if(!ValidStart(el))return false;
     try{
         auto peer=Automation::Peers::FrameworkElementAutomationPeer::FromElement(el);
@@ -75,9 +75,11 @@ bool OnPrimaryBar(FrameworkElement const& el,RECT const& bounds){
         if(!peer)return false;
         auto r=peer.GetBoundingRectangle();
         double x=r.X+r.Width/2.0,y=r.Y+r.Height/2.0;
-        return r.Width>0&&r.Height>0&&x>=bounds.left&&x<bounds.right&&y>=bounds.top&&y<bounds.bottom;
+        if(!(r.Width>0&&r.Height>0&&x>=bounds.left&&x<bounds.right&&y>=bounds.top&&y<bounds.bottom))return false;
+        result=r;return true;
     }catch(...){return false;}
 }
+bool OnPrimaryBar(FrameworkElement const& el,RECT const& bounds){Windows::Foundation::Rect r{};return TryPrimaryBounds(el,bounds,r);}
 bool SelectPrimary(RECT const& bounds){
     if(start&&OnPrimaryBar(start,bounds))return true;
     Restore();start=nullptr;startHandle=0;conflict=false;
@@ -88,12 +90,13 @@ bool SelectPrimary(RECT const& bounds){
     }
     return bool(start);
 }
-int Apply(int width, double barWidth){
+int Apply(int width, RECT const& bounds, UINT dpi){
+    const double barWidth=(bounds.right-bounds.left)*96.0/dpi;
     if(width<=0){Restore();conflict=false;return 0;}
     if(conflict)return -1;
     if(!ValidStart(start)){Restore();return 0;}
     auto root=start.XamlRoot();
-    if(root.Size().Width < barWidth*.55 || root.Size().Width > barWidth+20){Restore();return -1;}
+    if(root.Size().Width < 48 || root.Size().Width > barWidth+20){Restore();return -1;}
     if((ownsMargin&&!Same(start.Margin(),ourMargin))||(ownsTransform&&start.RenderTransform()!=translation)){
         Restore();conflict=true;return -1;
     }
@@ -108,14 +111,15 @@ int Apply(int width, double barWidth){
     // This is an actual measure/arrange change: the native repeater reserves width after Start.
     if(!ownsMargin||width!=currentWidth){
         ourMargin=initialMargin;ourMargin.Right+=width;start.Margin(ourMargin);ownsMargin=true;currentWidth=width;
-        return 0; // Wait one UI tick for Explorer's layout to settle.
+        return 3; // Wait one UI tick for Explorer's layout to settle.
     }
     // In centered mode Start's normal slot is centered too. Move only Start's visual
     // position to the root's leading edge; the positive margin keeps the native app group clear.
-    auto rootElement=root.Content().try_as<UIElement>();
-    if(!rootElement){Restore();return -1;}
-    auto p=start.TransformToVisual(rootElement).TransformPoint({0,0});
-    double naturalX=p.X-(ownsTransform?translation.X():0.0);
+    // XAML root coordinates are not necessarily taskbar coordinates on dual
+    // monitors. Use the validated physical Start bounds and primary HWND origin.
+    Windows::Foundation::Rect actual{};
+    if(!TryPrimaryBounds(start,bounds,actual)){Restore();return 2;}
+    double naturalX=(actual.X-bounds.left)*96.0/dpi-(ownsTransform?translation.X():0.0);
     if(!std::isfinite(naturalX)||naturalX< -8 || naturalX>barWidth){Restore();return -1;}
     const double wanted=std::min(0.0,4.0-naturalX);
     if(!ownsTransform && wanted < -.5){
@@ -127,9 +131,9 @@ int Apply(int width, double barWidth){
         if(oldTransformLocal!=DependencyProperty::UnsetValue() && oldTransformLocal && !oldTransformLocal.try_as<Media::Transform>()){
             Restore();conflict=true;return -1;
         }
-        translation=Media::TranslateTransform();translation.X(wanted);start.RenderTransform(translation);ownsTransform=true;return 0;
+        translation=Media::TranslateTransform();translation.X(wanted);start.RenderTransform(translation);ownsTransform=true;return 4;
     }
-    if(ownsTransform&&std::abs(translation.X()-wanted)>.5){translation.X(wanted);return 0;}
+    if(ownsTransform&&std::abs(translation.X()-wanted)>.5){translation.X(wanted);return 4;}
     // Managed UI Automation still independently checks the actual screen-coordinate slot.
     return 1;
 }
@@ -145,7 +149,7 @@ void CALLBACK Tick(HWND,UINT,UINT_PTR,DWORD){
         int req=InterlockedCompareExchange(&lease->width,0,0);int owner=InterlockedCompareExchange(&lease->owner,0,0);
         HWND bar=PrimaryBar();RECT bounds{};UINT dpi=bar?GetDpiForWindow(bar):0;
         if(owner>0&&heartbeat<=now&&now-heartbeat<2500&&req>0&&req<=1024&&bar&&dpi&&GetWindowRect(bar,&bounds)&&bounds.right-bounds.left>bounds.bottom-bounds.top&&req*dpi/96.0<(bounds.right-bounds.left)*.45){
-            w=req;state=SelectPrimary(bounds)?Apply(w,(bounds.right-bounds.left)*96.0/dpi):0;
+            w=req;state=SelectPrimary(bounds)?Apply(w,bounds,dpi):2;
         }else{Restore();conflict=false;}
     }catch(...){Restore();state=-1;}
     InterlockedExchange(&lease->appliedWidth,state==1?w:0);

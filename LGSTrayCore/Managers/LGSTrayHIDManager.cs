@@ -172,6 +172,8 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
             {
                 proc.Kill();
                 wasKilled = true;
+                using(var killed=new CancellationTokenSource(TimeSpan.FromSeconds(1)))
+                    try{await proc.WaitForExitAsync(killed.Token);}catch(OperationCanceledException){DiagnosticLogger.LogWarning("HID daemon exit still pending");}
 
                 // Must be read here: the finally below disposes and clears _daemonCts.
                 if (_daemonCts.IsCancellationRequested)
@@ -186,10 +188,10 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
             _daemonCts = null;
         }
 
-        DiagnosticLogger.Log($"[LGSTrayHIDManager]: HID daemon exited (exit code {proc.ExitCode})");
+        DiagnosticLogger.Log($"[LGSTrayHIDManager]: HID daemon exit (code {(proc.HasExited?proc.ExitCode:-1)})");
 
-        await Task.Delay(1000);
-        return wasKilled ? DaemonResult.WasKilled(killReason) : DaemonResult.Exited(proc.ExitCode);
+        if(!_cts.IsCancellationRequested)await Task.Delay(1000);
+        return wasKilled ? DaemonResult.WasKilled(killReason) : DaemonResult.Exited(proc.HasExited?proc.ExitCode:-1);
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -299,11 +301,13 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        _cts.Cancel();
+    public void RequestStop()=>_cts.Cancel();
 
-        return Task.CompletedTask;
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        RequestStop();
+        Task? supervisor;lock(_supervisorLock)supervisor=_supervisor;
+        if(supervisor!=null)await supervisor.WaitAsync(cancellationToken);
     }
 
     public async Task RediscoverDevices()

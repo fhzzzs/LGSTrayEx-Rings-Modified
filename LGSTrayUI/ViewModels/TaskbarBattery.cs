@@ -51,7 +51,10 @@ internal sealed record TaskbarBattery(DeviceType Type, string Name, int? Level, 
     {
         bool charging = device.IsOnline && (device.IsWiredMode || device.PowerSupplyStatus == PowerSupplyStatus.CHARGING);
         int? level = device.IsOnline && Valid(device) ? (int)Math.Round(device.BatteryPercentage, MidpointRounding.AwayFromZero) : null;
-        string status = !device.IsOnline ? "离线" : device.PowerSupplyStatus == PowerSupplyStatus.FULL ? "已充满"
+        // A G HUB inventory-only record with no battery reading is not an online device.
+        // A later valid update promotes it normally.
+        bool inventoryOnly=device.DataSource==DataSource.GHub&&device.LastUpdate==DateTimeOffset.MinValue&&!level.HasValue&&!charging;
+        string status = !device.IsOnline||inventoryOnly ? "离线" : device.PowerSupplyStatus == PowerSupplyStatus.FULL ? "已充满"
             : charging ? "充电中" : level.HasValue ? "已连接" : "等待读数";
         return new(device.DeviceType, device.DeviceName, level, status, charging, device.LastUpdate, key, PhysicalId:device.PhysicalId);
     }

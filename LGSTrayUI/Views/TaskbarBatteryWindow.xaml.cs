@@ -112,8 +112,8 @@ public partial class TaskbarBatteryWindow : Window
         var previousKeys=_groups.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);
         var previousRaw=_remembered.Keys.ToHashSet(StringComparer.Ordinal);
         foreach(var d in current.Values){
-            if(!_remembered.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId)inventoryChanged=true;
-            _remembered[d.Key]=d;
+            if(!_remembered.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId||(old.Updated==DateTimeOffset.MinValue&&d.Updated!=DateTimeOffset.MinValue))inventoryChanged=true;
+            _remembered[d.Key]=old!=null&&d.Updated==DateTimeOffset.MinValue?d with{Updated=old.Updated}:d;
         }
         foreach(var key in _remembered.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
             _remembered[key]=_remembered[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
@@ -155,7 +155,7 @@ public partial class TaskbarBatteryWindow : Window
         if (previous >= 0) children.RemoveAt(previous);
         children.Insert(position, item);
     }
-    private sealed record KnownDevice(DeviceType Type, string Name, string Key, string? PhysicalId=null);
+    private sealed record KnownDevice(DeviceType Type, string Name, string Key, string? PhysicalId=null,DateTimeOffset Updated=default);
     private void LoadKnownDevices()
     {
         try
@@ -164,7 +164,7 @@ public partial class TaskbarBatteryWindow : Window
             foreach (var item in JsonSerializer.Deserialize<KnownDevice[]>(File.ReadAllText(_knownPath)) ?? [])
             {
                 if (string.IsNullOrWhiteSpace(item.Key) || TaskbarBattery.Rank(item.Type) >= 4) continue;
-                _remembered[item.Key] = new(item.Type, item.Name, null, "离线", false, DateTimeOffset.MinValue, item.Key, PhysicalId:item.PhysicalId);
+                _remembered[item.Key] = new(item.Type, item.Name, null, "离线", false, item.Updated, item.Key, PhysicalId:item.PhysicalId);
             }
         }
         catch (Exception ex) { DiagnosticLogger.LogWarning($"Taskbar inventory load: {ex.Message}"); }
@@ -173,7 +173,7 @@ public partial class TaskbarBatteryWindow : Window
     {
         try
         {
-            var inventory = _remembered.Values.Select(d => new KnownDevice(d.Type, d.Name, d.Key,d.PhysicalId)).ToArray();
+            var inventory = _remembered.Values.Select(d => new KnownDevice(d.Type, d.Name, d.Key,d.PhysicalId,d.Updated)).ToArray();
             Directory.CreateDirectory(Path.GetDirectoryName(_knownPath)!);
             string temp = _knownPath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(inventory));
@@ -236,6 +236,7 @@ public partial class TaskbarBatteryWindow : Window
 
     private void Reposition(object? sender, EventArgs e)
     {
+        if(_closed)return;
         PollExtraDevices();
         CheckNotifications();
         NativeTaskbarSlot.Instance.Update(_animator.Width);

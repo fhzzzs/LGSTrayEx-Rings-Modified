@@ -40,6 +40,7 @@ internal static class PrimaryNotificationPopup
     private static readonly List<Entry> Active=[];
     private static bool arranging;
     private static DispatcherTimer? monitorTimer;
+    internal static void CloseAll(){monitorTimer?.Stop();foreach(var entry in Active.ToArray())entry.Window.Close();}
     internal static void Show(string title,string message,string color,TimeSpan expiration,string? actionText=null,Action? action=null,string? deviceKey=null)
     {
         var dispatcher=Application.Current?.Dispatcher;
