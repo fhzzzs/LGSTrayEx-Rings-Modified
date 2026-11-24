@@ -41,6 +41,7 @@ public partial class TaskbarBatteryWindow : Window
     private readonly RingStripAnimator _animator;
     private RingSettingsWindow? _settings;
     private readonly RingAlerts _alerts = new();
+    private readonly GroupedConnectionTracker _connections = new(DateTimeOffset.UtcNow);
     private DeviceGroup[] _groups = [];
     private TaskbarBattery[] _rows = [];
 
@@ -137,10 +138,10 @@ public partial class TaskbarBatteryWindow : Window
         if(inventoryChanged){SaveKnownDevices();RingConfig.Save();}
         _animator.Update(rows);
         foreach(var child in RingItems.Children) if(child is Button b) ToolTipService.SetIsEnabled(b,RingConfig.Current.Hover);
-        _alerts.Check(rows);
+        CheckNotifications();
         if (_settings != null) _settings.UpdateDevices(rows,_groups);
     }
-    private void SettingsChanged(){ RefreshReadings(); _animator.RefreshLayout(); }
+    private void SettingsChanged(){ _connections.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
     private void UpdatePlacement(){ if (_closed) return; Dispatcher.BeginInvoke(new Action(()=>Reposition(null,EventArgs.Empty))); }
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
@@ -217,10 +218,26 @@ public partial class TaskbarBatteryWindow : Window
         else if (!_scanningBluetooth && now >= _nextBluetooth) _ = ScanBluetoothAsync();
     }
 
+    private void CheckNotifications()
+    {
+        var now=DateTimeOffset.UtcNow;
+        if(!_tray.RediscoverDevicesEnabled)_connections.Suppress(now,TimeSpan.FromSeconds(5));
+        var c=RingConfig.Current;
+        foreach(var change in _connections.Observe(_groups.Where(g=>!g.Ignored),now))
+        {
+            if(!c.ConnectionAlerts)continue;
+            var d=change.Device;
+            string name=c.Names.TryGetValue(d.Key,out var custom)&&!string.IsNullOrWhiteSpace(custom)?custom:d.Name;
+            PrimaryNotificationPopup.Show(name,change.Online?"已连接"+(d.Level is int n?$" · {n}%":""):"已断开连接",
+                change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(4),deviceKey:d.Key);
+        }
+        if(!_connections.IsSuppressed(now))_alerts.Check(_rows);
+    }
+
     private void Reposition(object? sender, EventArgs e)
     {
         PollExtraDevices();
-        _alerts.Check(_rows);
+        CheckNotifications();
         NativeTaskbarSlot.Instance.Update(_animator.Width);
         if (_openMenu?.IsOpen == true) {
             return;
@@ -268,7 +285,7 @@ public partial class TaskbarBatteryWindow : Window
         b.Unloaded+=(_,_)=>{if(menu.IsOpen)menu.IsOpen=false;};
         return b;
     }
-    internal void Rescan(){_nextBluetooth=_nextControllers=_nextAsus=DateTimeOffset.MinValue;PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
+    internal void Rescan(){_connections.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_nextBluetooth=_nextControllers=_nextAsus=DateTimeOffset.MinValue;PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
 
     private void ForgetOffline(object sender, RoutedEventArgs e)
     {

@@ -158,7 +158,7 @@ public partial class App : Application
         builder.Services.AddWebSocketClientFactory();
         builder.Services.AddWebserver(builder.Configuration);
         builder.Services.AddMQTTClient(builder.Configuration);
-        builder.Services.AddNotifications(builder.Configuration);
+        // Rings notifications use the merged device inventory, not raw provider events.
 
         var host = builder.Build();
         _host = host; // Store host reference for wake handler

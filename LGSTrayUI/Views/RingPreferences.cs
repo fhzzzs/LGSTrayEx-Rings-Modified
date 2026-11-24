@@ -27,6 +27,7 @@ internal sealed class RingPreferences
     public double BatteryMs {get;set;}=500; public double ColorMs {get;set;}=500; public double SpringMs {get;set;}=500; public double StaggerMs {get;set;}=75; public double Bounce {get;set;}=6;
     public double LowAt {get;set;}=20; public double CriticalAt {get;set;}=10; public bool AutoAdd {get;set;}=true; public bool AutoHide {get;set;}=true;
     public bool Alerts {get;set;}=true; public bool Sound {get;set;}=true; public string Rules {get;set;}="20:30,10:15,5:5";
+    public bool ConnectionAlerts {get;set;}=true;
     public bool AutoDeduplicate {get;set;}=true;
     public Dictionary<string,string> AutomaticAliases {get;set;}=new();
     public List<string> ModelGroupRoots {get;set;}=[];

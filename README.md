@@ -30,7 +30,7 @@ LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless m
 | Layout | Left/right placement, adjustable gaps, DPI-aware sizing and live preview |
 | Devices | Automatic discovery, drag-to-reorder, rename, hide, ignore and manual merge/separate |
 | Identity | Confirmed hardware identity and reversible unique Logitech HID / G HUB model matching, preferred data source and fallback |
-| Notifications | Multiple battery thresholds, repeat intervals, per-device rules, sound selection, volume and WAV import |
+| Notifications | Compact primary-monitor notifications for stable merged-device connection changes; battery thresholds, repeat intervals, per-device rules, sound selection, volume and WAV import |
 | Themes | Light/dark appearance, presets, custom themes, advanced color controls and JSON import/export |
 | Quick access | Shared context menu with Settings, Rescan, Manage devices and Exit; optional hover details |
 | Packaging | Self-contained .NET portable build; no Windhawk dependency |
@@ -85,7 +85,7 @@ Rings.9 includes a bundled native provider, `NativeLayout.dll`, intended to rese
 
 The provider uses a heartbeat-based reservation lease, attempts to restore modified layout properties, and checks actual screen geometry before showing rings. Incompatible layouts first try a verified left-side gap, then a safe right-side gap, or hide the strip when no safe space exists. Left-side fallback does not move Start or reserve native space. The settings page reports the actual placement.
 
-The initial target is a single-monitor Windows 11 x64 system with a horizontal primary taskbar. Centered mode, DPI, crowded taskbars, Explorer recovery and native placement still require live testing. Test in a disposable VM before using the experimental feature on your main desktop.
+The target is Windows 11 x64 with a horizontal primary taskbar, including multi-monitor configurations when the primary Start control is verified. Centered mode, DPI, crowded taskbars, Explorer recovery and native placement still require live testing. Test in a disposable VM before using the experimental feature on your main desktop.
 
 See [NativeLayout documentation](NativeLayout/README.md) for limitations and recovery details.
 
@@ -107,7 +107,7 @@ See [installation and build notes](INSTALL.md).
 
 Open an [issue](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/issues) with your Windows version, device model, connection mode, build commit, steps to reproduce and relevant screenshots or logs. For layout issues, include taskbar alignment, DPI and the native-layout status shown in Settings. Remove personal information and device identifiers from logs before posting.
 
-Settings and diagnostic logs are stored under `%LOCALAPPDATA%\LGSTray`. Windows 10, ARM64 and multi-monitor taskbar support are not established.
+Settings and diagnostic logs are stored under `%LOCALAPPDATA%\LGSTray`. Windows 10, ARM64 and native multi-monitor taskbar behavior are not yet hardware-validated.
 
 ## Credits and license
 

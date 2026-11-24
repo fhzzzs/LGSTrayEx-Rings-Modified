@@ -47,11 +47,19 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         int? startButtonRight=null, startButtonLeft=null;
         try {
             var root=System.Windows.Automation.AutomationElement.FromHandle(bar);
-            var condition=new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.Button);
+            var condition=new System.Windows.Automation.OrCondition(
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.AutomationIdProperty,"StartButton"),
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.Button),
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.TabItem),
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.ListItem),
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.MenuItem),
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.CheckBox));
             foreach(System.Windows.Automation.AutomationElement item in root.FindAll(System.Windows.Automation.TreeScope.Descendants,condition)){
                 var r=item.Current.BoundingRectangle;if(item.Current.IsOffscreen||r.IsEmpty||r.Width<=0||r.Height<=0||r.Top>=y+height||r.Bottom<=y)continue;
-                if(item.Current.AutomationId=="StartButton" && r.Left>=bounds.Left && r.Right<=end){startButtonRight=(int)Math.Ceiling(r.Right);startButtonLeft=(int)Math.Floor(r.Left);}
-                if(r.Left<end&&r.Right>bounds.Left){var interval=((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right));occupied.Add(interval);if(item.Current.AutomationId!="StartButton")nonStart.Add(interval);}
+                bool isStart=item.Current.AutomationId=="StartButton"||
+                    (item.Current.ClassName=="ToggleButton"&&item.Current.Name is "Start" or "开始");
+                if(isStart && r.Left>=bounds.Left && r.Right<=end){startButtonRight=(int)Math.Ceiling(r.Right);startButtonLeft=(int)Math.Floor(r.Left);}
+                if(r.Left<end&&r.Right>bounds.Left){var interval=((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right));occupied.Add(interval);if(!isStart)nonStart.Add(interval);}
             }
         }catch{if(c.Left)NativeTaskbarSlot.Instance.Verify(false);return false;}
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
@@ -73,6 +81,15 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
                TryLeftFallback(Math.Max(bounds.Left,info.Monitor.Left),end,sl,sr,(int)Math.Ceiling(24*scale),width,leftGap,rightGap,offset,occupied,out int lx)){
                 NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左侧安全空位（非原生占位）");
                 placement=new(lx,y,width,height,scale);return true;
+            }
+            // Some Windows versions expose a different Start automation identifier.
+            // Only use a left-side gap when actual controls were observed; reserve the
+            // first conventional Start-width area if the Start button is unidentified.
+            int edge=Math.Max(bounds.Left,info.Monitor.Left);
+            int leftLimit=Math.Min(end,edge+(bounds.Right-edge)/2);
+            if(occupied.Count>0&&TryGap(startButtonLeft.HasValue?edge:start,leftLimit,width,leftGap,rightGap,offset,true,occupied,out int safeLeft)){
+                NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左半区域安全空位（非原生占位）");
+                placement=new(safeLeft,y,width,height,scale);return true;
             }
         }
         if(!TryGap(start,end,width,leftGap,rightGap,offset,false,occupied,out int x)){

@@ -13,9 +13,11 @@
 #include <cstddef>
 #include <cwchar>
 #include <string>
+#include <vector>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
+#include <winrt/Windows.UI.Xaml.Automation.Peers.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 using namespace winrt;
@@ -29,11 +31,12 @@ struct alignas(8) Lease {
     volatile LONG64 reply;
 };
 static_assert(sizeof(Lease)==32 && offsetof(Lease,tick)==8 && offsetof(Lease,reply)==24);
-std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout."+std::to_wstring(GetCurrentProcessId());}
+std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout.2."+std::to_wstring(GetCurrentProcessId());}
 HWND PrimaryBar(){HWND h=FindWindowW(L"Shell_TrayWnd",nullptr);DWORD pid=0;if(h)GetWindowThreadProcessId(h,&pid);return pid==GetCurrentProcessId()?h:nullptr;}
 // Access these UI objects exclusively from the primary taskbar UI thread.
 FrameworkElement start{nullptr};
 InstanceHandle startHandle{};
+std::vector<std::pair<InstanceHandle,FrameworkElement>> candidates;
 UINT_PTR timerId{};
 Windows::Foundation::IInspectable oldMarginLocal{nullptr},oldTransformLocal{nullptr};
 Thickness initialMargin{}, ourMargin{};
@@ -61,6 +64,29 @@ bool ValidStart(FrameworkElement const& el){
     if(!el||get_class_name(el)!=L"Taskbar.ExperienceToggleButton"||Automation::AutomationProperties::GetAutomationId(el)!=L"StartButton")return false;
     auto parent=Media::VisualTreeHelper::GetParent(el).try_as<FrameworkElement>();
     return parent && parent.Name()==L"TaskbarFrameRepeater" && el.XamlRoot() && el.Visibility()==Visibility::Visible && el.ActualWidth()>10 && el.FlowDirection()==FlowDirection::LeftToRight;
+}
+// The same Explorer UI thread can own multiple taskbars. Identify the primary
+// Start button by its actual automation screen bounds, never by thread alone.
+bool OnPrimaryBar(FrameworkElement const& el,RECT const& bounds){
+    if(!ValidStart(el))return false;
+    try{
+        auto peer=Automation::Peers::FrameworkElementAutomationPeer::FromElement(el);
+        if(!peer)peer=Automation::Peers::FrameworkElementAutomationPeer::CreatePeerForElement(el);
+        if(!peer)return false;
+        auto r=peer.GetBoundingRectangle();
+        double x=r.X+r.Width/2.0,y=r.Y+r.Height/2.0;
+        return r.Width>0&&r.Height>0&&x>=bounds.left&&x<bounds.right&&y>=bounds.top&&y<bounds.bottom;
+    }catch(...){return false;}
+}
+bool SelectPrimary(RECT const& bounds){
+    if(start&&OnPrimaryBar(start,bounds))return true;
+    Restore();start=nullptr;startHandle=0;conflict=false;
+    for(auto const& candidate:candidates){
+        if(!OnPrimaryBar(candidate.second,bounds))continue;
+        if(start){start=nullptr;startHandle=0;return false;} // ambiguous: do not modify either
+        start=candidate.second;startHandle=candidate.first;
+    }
+    return bool(start);
 }
 int Apply(int width, double barWidth){
     if(width<=0){Restore();conflict=false;return 0;}
@@ -118,8 +144,8 @@ void CALLBACK Tick(HWND,UINT,UINT_PTR,DWORD){
         auto now=GetTickCount64();auto heartbeat=static_cast<ULONGLONG>(InterlockedCompareExchange64(&lease->tick,0,0));
         int req=InterlockedCompareExchange(&lease->width,0,0);int owner=InterlockedCompareExchange(&lease->owner,0,0);
         HWND bar=PrimaryBar();RECT bounds{};UINT dpi=bar?GetDpiForWindow(bar):0;
-        if(owner>0&&heartbeat<=now&&now-heartbeat<2500&&req>0&&req<=1024&&bar&&dpi&&GetSystemMetrics(SM_CMONITORS)==1&&GetWindowRect(bar,&bounds)&&bounds.right-bounds.left>bounds.bottom-bounds.top&&req*dpi/96.0<(bounds.right-bounds.left)*.45){
-            w=req;state=Apply(w,(bounds.right-bounds.left)*96.0/dpi);
+        if(owner>0&&heartbeat<=now&&now-heartbeat<2500&&req>0&&req<=1024&&bar&&dpi&&GetWindowRect(bar,&bounds)&&bounds.right-bounds.left>bounds.bottom-bounds.top&&req*dpi/96.0<(bounds.right-bounds.left)*.45){
+            w=req;state=SelectPrimary(bounds)?Apply(w,(bounds.right-bounds.left)*96.0/dpi):0;
         }else{Restore();conflict=false;}
     }catch(...){Restore();state=-1;}
     InterlockedExchange(&lease->appliedWidth,state==1?w:0);
@@ -134,13 +160,13 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback,non_agile>{
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation,VisualElement el,VisualMutationType mutation) noexcept override{
         try{
             HWND bar=PrimaryBar();if(!bar||GetWindowThreadProcessId(bar,nullptr)!=GetCurrentThreadId())return S_OK;
-            if(mutation==Remove){if(el.Handle==startHandle){Restore();start=nullptr;startHandle=0;conflict=false;}return S_OK;}
+            if(mutation==Remove){candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](auto const& item){return item.first==el.Handle;}),candidates.end());if(el.Handle==startHandle){Restore();start=nullptr;startHandle=0;conflict=false;}return S_OK;}
             if(mutation!=Add||!el.Type||wcscmp(el.Type,L"Taskbar.ExperienceToggleButton")!=0)return S_OK;
             Windows::Foundation::IInspectable obj{nullptr};
             if(FAILED(diagnostics->GetIInspectableFromHandle(el.Handle,reinterpret_cast<::IInspectable**>(put_abi(obj)))))return S_OK;
             auto f=obj.try_as<FrameworkElement>();
             if(!f||Automation::AutomationProperties::GetAutomationId(f)!=L"StartButton")return S_OK;
-            if(start!=f){Restore();start=f;startHandle=el.Handle;conflict=false;}
+            if(std::none_of(candidates.begin(),candidates.end(),[&](auto const& item){return item.first==el.Handle;}))candidates.emplace_back(el.Handle,f);
             // Pin only this specific loaded module so the UI timer cannot run into an unloaded DLL.
             if(!timerId){HMODULE module=nullptr;
                 if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(&Tick),&module))timerId=SetTimer(nullptr,0,250,Tick);

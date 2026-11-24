@@ -14,50 +14,60 @@ namespace LGSTrayUI;
 // right edge or mix primary-monitor DIPs with another monitor's coordinates.
 internal static class NotificationPlacement
 {
-    internal static Rect[] Stack(Rect work,double scale,int count)
+    internal const double Width=300,CompactHeight=76,ActionHeight=114;
+    internal const int MaxVisible=3;
+    internal static Rect[] Stack(Rect work,double scale,int count)=>Stack(work,scale,Enumerable.Repeat(CompactHeight,Math.Clamp(count,0,MaxVisible)).ToArray());
+    internal static Rect[] Stack(Rect work,double scale,IReadOnlyList<double> heights)
     {
-        if(work.IsEmpty||work.Width<=0||work.Height<=0||!double.IsFinite(scale)||scale<=0||count<=0)return [];
+        if(work.IsEmpty||work.Width<=0||work.Height<=0||!double.IsFinite(scale)||scale<=0||heights.Count==0)return [];
         double margin=Math.Min(Math.Ceiling(12*scale),Math.Min(work.Width,work.Height)/8);
         double gap=Math.Ceiling(8*scale);
-        double width=Math.Max(1,Math.Min(Math.Ceiling(360*scale),work.Width-2*margin));
-        double height=Math.Max(1,Math.Min(Math.Ceiling(170*scale),work.Height-2*margin));
-        int capacity=Math.Max(1,(int)Math.Floor((work.Height-2*margin+gap)/(height+gap)));
-        return Enumerable.Range(0,Math.Min(count,capacity))
-            .Select(i=>new Rect(work.Right-margin-width,work.Bottom-margin-height-i*(height+gap),width,height)).ToArray();
+        double width=Math.Max(1,Math.Min(Math.Ceiling(Width*scale),work.Width-2*margin));
+        double bottom=work.Bottom-margin;var result=new List<Rect>();
+        foreach(double logical in heights.Take(MaxVisible)){
+            double height=Math.Max(1,Math.Min(Math.Ceiling(logical*scale),work.Height-2*margin));
+            if(bottom-height<work.Top+margin)break;
+            result.Add(new Rect(work.Right-margin-width,bottom-height,width,height));
+            bottom-=height+gap;
+        }
+        return result.ToArray();
     }
 }
 
 internal static class PrimaryNotificationPopup
 {
-    private sealed record Entry(Window Window,nint Handle);
+    private sealed record Entry(Window Window,nint Handle,string? DeviceKey,double Height);
     private static readonly List<Entry> Active=[];
     private static bool arranging;
     private static DispatcherTimer? monitorTimer;
-    internal static void Show(string title,string message,string color,TimeSpan expiration,string? actionText=null,Action? action=null)
+    internal static void Show(string title,string message,string color,TimeSpan expiration,string? actionText=null,Action? action=null,string? deviceKey=null)
     {
         var dispatcher=Application.Current?.Dispatcher;
         if(dispatcher==null||dispatcher.HasShutdownStarted)return;
-        if(!dispatcher.CheckAccess()){dispatcher.BeginInvoke(new Action(()=>Show(title,message,color,expiration,actionText,action)));return;}
+        if(!dispatcher.CheckAccess()){dispatcher.BeginInvoke(new Action(()=>Show(title,message,color,expiration,actionText,action,deviceKey)));return;}
+        if(deviceKey!=null)foreach(var old in Active.Where(e=>e.DeviceKey==deviceKey).ToArray())old.Window.Close();
+        double height=actionText==null?NotificationPlacement.CompactHeight:NotificationPlacement.ActionHeight;
         var w=new Window{
             Title="Battery Monitor",WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
             Topmost=true,ShowActivated=false,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.Manual,
-            Width=360,Height=170,Background=new SolidColorBrush(RingPreferences.Ink(color)),Foreground=Brushes.White
+            Width=NotificationPlacement.Width,Height=height,Background=new SolidColorBrush(RingPreferences.Ink("#25282E")),Foreground=Brushes.White
         };
-        var root=new DockPanel{Margin=new Thickness(12)};
-        var close=new Button{Content="×",Width=28,Height=26,Padding=new Thickness(0),Margin=new Thickness(8,0,0,0),VerticalAlignment=VerticalAlignment.Top};
+        var root=new DockPanel{Margin=new Thickness(9,7,9,7)};
+        var accent=new Border{Width=3,CornerRadius=new CornerRadius(2),Margin=new Thickness(0,2,9,2),Background=new SolidColorBrush(RingPreferences.Ink(color))};DockPanel.SetDock(accent,Dock.Left);root.Children.Add(accent);
+        var close=new Button{Content="×",Width=23,Height=23,Padding=new Thickness(0),Margin=new Thickness(5,0,0,0),VerticalAlignment=VerticalAlignment.Top};
         close.Click+=(_,_)=>w.Close();DockPanel.SetDock(close,Dock.Right);root.Children.Add(close);
         var content=new StackPanel();
-        content.Children.Add(new TextBlock{Text=title,TextWrapping=TextWrapping.Wrap,FontSize=15,FontWeight=FontWeights.SemiBold});
-        content.Children.Add(new TextBlock{Text=message,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,7,0,0),FontSize=13});
+        content.Children.Add(new TextBlock{Text=title,TextWrapping=TextWrapping.Wrap,FontSize=13,FontWeight=FontWeights.SemiBold,MaxHeight=34,TextTrimming=TextTrimming.CharacterEllipsis,ToolTip=title});
+        content.Children.Add(new TextBlock{Text=message,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,3,0,0),FontSize=12});
         if(actionText!=null){
-            var button=new Button{Content=actionText,Margin=new Thickness(0,9,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+            var button=new Button{Content=actionText,Margin=new Thickness(0,5,0,0),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Left};
             button.Click+=(_,_)=>{action?.Invoke();w.Close();};content.Children.Add(button);
         }
         root.Children.Add(new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
         w.Content=root;
         var handle=new WindowInteropHelper(w).EnsureHandle();
         TaskbarPlacement.MakeToolWindow(handle);
-        var entry=new Entry(w,handle);
+        var entry=new Entry(w,handle,deviceKey,height);
         DispatcherTimer? expiry=null;
         w.Closed+=(_,_)=>{
             expiry?.Stop();Active.Remove(entry);
@@ -89,7 +99,7 @@ internal static class PrimaryNotificationPopup
             if(monitor==0||!GetMonitorInfo(monitor,ref info))return;
             double scale=GetDpiForSystem()/96d;if(scale<=0)scale=1;
             var work=new Rect(info.Work.Left,info.Work.Top,Math.Max(0,info.Work.Right-info.Work.Left),Math.Max(0,info.Work.Bottom-info.Work.Top));
-            var positions=NotificationPlacement.Stack(work,scale,Active.Count);
+            var positions=NotificationPlacement.Stack(work,scale,Active.AsEnumerable().Reverse().Select(e=>e.Height).ToArray());
             if(positions.Length==0)return;
             while(Active.Count>positions.Length)Active[0].Window.Close();
             for(int i=0;i<Active.Count;i++){

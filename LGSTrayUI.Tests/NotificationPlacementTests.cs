@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using Xunit;
 namespace LGSTrayUI.Tests;
@@ -13,6 +14,9 @@ public class NotificationPlacementTests
         var work=new Rect(0,0,width,height);
         var slots=NotificationPlacement.Stack(work,scale,20);
         Assert.NotEmpty(slots);
+        Assert.InRange(slots.Length,1,3);
+        Assert.True(slots[0].Width<=Math.Ceiling(300*scale));
+        Assert.True(slots[0].Height<=Math.Ceiling(76*scale));
         foreach(var slot in slots)Assert.True(work.Contains(slot));
         for(int i=1;i<slots.Length;i++)Assert.True(slots[i].Bottom<=slots[i-1].Top);
     }

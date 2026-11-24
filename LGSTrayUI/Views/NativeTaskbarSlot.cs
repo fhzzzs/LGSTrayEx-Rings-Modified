@@ -19,6 +19,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
     private MemoryMappedViewAccessor? _view;
     private uint _explorerPid;
     private int _request, _blockedWidth, _lastWanted;
+    private string _blockedReason="";
     private long _requestedAt, _unusableSince;
     private Task<int>? _attach;
     private uint _attemptedPid;
@@ -39,17 +40,17 @@ internal sealed class NativeTaskbarSlot : IDisposable
         var c=RingConfig.Current;
         int wanted=c.Left?TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X).total:0;
         if(wanted==0){ Release();_blockedWidth=0;_lastWanted=0;Status=c.Left?"等待设备连接 · 已释放占位":"靠右 · 原生左侧占位已释放";return; }
-        if(!SupportedBuild(Environment.OSVersion.Version.Build)||RuntimeInformation.ProcessArchitecture!=Architecture.X64||GetSystemMetrics(80)!=1){Release();Status="当前 Windows 版本或显示器布局不在实验性原生支持范围 · 安全定位";return;}
+        if(!SupportedBuild(Environment.OSVersion.Version.Build)||RuntimeInformation.ProcessArchitecture!=Architecture.X64){Release();Status=$"Windows build {Environment.OSVersion.Version.Build} 或架构不在原生支持范围 · 安全定位";return;}
         var bar=FindWindow("Shell_TrayWnd",null);GetWindowThreadProcessId(bar,out uint pid);
         if(bar==0||pid==0){Release();Status="等待 Windows 任务栏";return;}
         if(pid!=_explorerPid){Release();_explorerPid=pid;_blockedWidth=0;_lastWanted=0;_attemptedPid=0;_attach=null;}
         if(wanted!=_lastWanted){_lastWanted=wanted;_blockedWidth=0;_unusableSince=0;}
-        if(_blockedWidth==wanted){Status="原生占位未通过实际位置校验 · 安全定位（切换左右可重试布局）";return;}
+        if(_blockedWidth==wanted){Status=_blockedReason+"（切换左右可重试）";return;}
         string dll=Path.Combine(AppContext.BaseDirectory,"NativeLayout.dll");
         if(!File.Exists(dll)){Release();Status="NativeLayout.dll 缺失 · 安全定位";return;}
         try{
             if(_view==null){
-                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.{pid}",32,MemoryMappedFileAccess.ReadWrite);
+                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.2.{pid}",32,MemoryMappedFileAccess.ReadWrite);
                 _view=_map.CreateViewAccessor(0,32,MemoryMappedFileAccess.ReadWrite);
                 _request=0;_requestedAt=Environment.TickCount64;
                 _view.Write(16,0);_view.Write(20,0);_view.Write(24,0L);
@@ -81,7 +82,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
         long now=Environment.TickCount64;if(_unusableSince==0)_unusableSince=now;
         if(now-_unusableSince>=2200)Block(_request,"原生占位与实际控件冲突 · 已释放占位，使用安全定位");
     }
-    private void Block(int width,string message){Release();_blockedWidth=width;Status=message;}
+    private void Block(int width,string message){Release();_blockedWidth=width;_blockedReason=message;Status=message;DiagnosticLogger.LogWarning("NativeLayout: "+message);}
     private void Release(){
         try{if(_view!=null){_view.Write(0,0);Thread.MemoryBarrier();_view.Write(8,0L);}}catch{}
         _view?.Dispose();_map?.Dispose();_view=null;_map=null;_request=0;Acknowledged=false;_unusableSince=0;
