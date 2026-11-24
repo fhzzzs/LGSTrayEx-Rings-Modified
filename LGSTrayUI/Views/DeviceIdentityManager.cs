@@ -1,15 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LGSTrayPrimitives;
 namespace LGSTrayUI;
 
-// Provider records are retained separately. Only explicitly linked records or records
-// with the same confirmed physical identifier are combined; names are never proof.
-internal sealed record DeviceGroup(TaskbarBattery Reading, TaskbarBattery[] Sources, bool Ignored);
+// Raw providers remain separate; exact identity and unique Logitech cross-provider model pairs
+// are grouped before rendering. Inferred model links remain reversible, not hardware proof.
+internal sealed record DeviceGroup(TaskbarBattery Reading, TaskbarBattery[] Sources, bool Ignored, bool Inferred=false);
 internal static class DeviceIdentityManager
 {
     internal static string Source(string key)=>key.Split(':')[0] switch {"logi"=>key.Contains(":GHub:",StringComparison.OrdinalIgnoreCase)?"G HUB":"Logitech HID", "gip"=>"Windows Gaming Input / GIP","xinput"=>"XInput","ble"=>"Bluetooth LE","asus"=>"ASUS HID",_=>"历史记录"};
     internal static string Resolve(RingPreferences c,string key){var seen=new HashSet<string>(StringComparer.Ordinal);while(seen.Add(key)){if(c.DeviceAliases.TryGetValue(key,out var next)&&next!=key){key=next;continue;}if(c.AutoDeduplicate&&!c.SeparateDeviceSources.Contains(key)&&c.AutomaticAliases.TryGetValue(key,out next)&&next!=key&&!c.SeparateDeviceSources.Contains(next)){key=next;continue;}break;}return key;}
+    private static string? LogitechProvider(TaskbarBattery d){
+        var parts=d.Key.Split(':',5);
+        return parts.Length>=5&&parts[0]=="logi"&&(parts[3] is "Native" or "GHub")?parts[3]:null;
+    }
+    private static string LogitechModel(TaskbarBattery d){
+        var n=new string(d.Name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+        if(d.Type==DeviceType.Mouse&&(n is "PROX2" or "PROXSUPERLIGHT2" or "PROXSUPERLIGHT2WIRELESSMOUSE" or "PROXSUPERLIGHT2GAMINGMOUSE" or "PROXSUPERLIGHT2WIRELESSGAMINGMOUSE"))return "PROXSUPERLIGHT2";
+        if(d.Type==DeviceType.Headset&&(n is "PROX2LIGHTSPEED" or "PROX2LIGHTSPEEDGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSHEADSET"))return "PROX2LIGHTSPEED";
+        return n;
+    }
     internal static DeviceGroup[] Group(IEnumerable<TaskbarBattery> readings,RingPreferences c){
         var raw=readings.GroupBy(d=>d.Key,StringComparer.Ordinal).Select(g=>Best(g,null)).ToArray();
         var byKey=raw.ToDictionary(d=>d.Key,StringComparer.Ordinal);
@@ -29,10 +40,30 @@ internal static class DeviceIdentityManager
                 roots[key]=root;
             }
         }}
+        var inferred=new HashSet<string>(StringComparer.Ordinal);
+        if(c.AutoDeduplicate){
+            // Include remembered offline records: rescan and reconnect must not undo grouping.
+            foreach(var set in raw.Where(d=>LogitechProvider(d)!=null).GroupBy(d=>(d.Type,Model:LogitechModel(d)))){
+                var pair=set.ToArray();if(set.Key.Model.Length==0||pair.Length!=2||LogitechProvider(pair[0])==LogitechProvider(pair[1]))continue;
+                var a=pair[0];var b=pair[1];
+                if(c.SeparateDeviceSources.Contains(a.Key)||c.SeparateDeviceSources.Contains(b.Key))continue;
+                if(!string.IsNullOrWhiteSpace(a.PhysicalId)&&!string.IsNullOrWhiteSpace(b.PhysicalId)&&a.PhysicalId!=b.PhysicalId)continue;
+                var ar=roots[a.Key];var br=roots[b.Key];if(ar==br)continue;
+                if(ar!=a.Key||br!=b.Key||roots.Values.Count(k=>k==ar)!=1||roots.Values.Count(k=>k==br)!=1||c.DeviceAliases.ContainsValue(ar)||c.DeviceAliases.ContainsValue(br)||c.AutomaticAliases.ContainsValue(ar)||c.AutomaticAliases.ContainsValue(br))continue;
+                // Prefer the established root from a previous grouping; persist only a model
+                // preference, never a guessed physical alias. Re-evaluate ambiguity each refresh.
+                var root=new[]{ar,br}.OrderByDescending(k=>c.ModelGroupRoots.Contains(k)).ThenBy(k=>c.Order.IndexOf(k) is int n&&n>=0?n:int.MaxValue).ThenBy(k=>k,StringComparer.Ordinal).First();
+                var secondary=root==ar?br:ar;
+                Inherit(c,secondary,root);
+                if(c.Hidden.Contains(secondary)&&!c.Hidden.Contains(root))c.Hidden.Add(root);
+                if(!c.ModelGroupRoots.Contains(root))c.ModelGroupRoots.Add(root);
+                roots[secondary]=root;inferred.Add(root);
+            }
+        }
         return raw.GroupBy(d=>roots[d.Key],StringComparer.Ordinal).Select(g=>{
             var sources=g.OrderBy(d=>d.Key,StringComparer.Ordinal).ToArray();var best=Best(sources,c.PreferredSources.GetValueOrDefault(g.Key));
             var primary=sources.FirstOrDefault(d=>d.Key==g.Key)??best;
-            return new DeviceGroup(best with{Key=g.Key,Name=primary.Name},sources,c.IgnoredDevices.Contains(g.Key));
+            return new DeviceGroup(best with{Key=g.Key,Name=primary.Name},sources,c.IgnoredDevices.Contains(g.Key),inferred.Contains(g.Key));
         }).OrderBy(g=>TaskbarBattery.Rank(g.Reading.Type)).ThenBy(g=>g.Reading.Key,StringComparer.Ordinal).ToArray();
     }
     internal static TaskbarBattery Best(IEnumerable<TaskbarBattery> sources,string? preferred)=>sources.OrderBy(d=>d.Offline).ThenByDescending(d=>d.Level.HasValue).ThenByDescending(d=>d.Key==preferred).ThenByDescending(d=>d.ShortLabel!=null&&d.ShortLabel!="—"&&d.ShortLabel!="USB").ThenBy(d=>d.Key.StartsWith("xinput:")?2:d.Key.StartsWith("ble:")?1:0).ThenByDescending(d=>d.Updated).ThenBy(d=>d.Key,StringComparer.Ordinal).First();

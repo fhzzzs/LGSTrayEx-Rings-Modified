@@ -29,7 +29,7 @@ LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless m
 | Animations | Battery transitions, charging highlights, lightning indicator, offline fade-out and spring-style repositioning |
 | Layout | Left/right placement, adjustable gaps, DPI-aware sizing and live preview |
 | Devices | Automatic discovery, drag-to-reorder, rename, hide, ignore and manual merge/separate |
-| Identity | Automatic merging when reliable physical identifiers are available, preferred data source and fallback |
+| Identity | Confirmed hardware identity and reversible unique Logitech HID / G HUB model matching, preferred data source and fallback |
 | Notifications | Multiple battery thresholds, repeat intervals, per-device rules, sound selection, volume and WAV import |
 | Themes | Light/dark appearance, presets, custom themes, advanced color controls and JSON import/export |
 | Quick access | Shared context menu with Settings, Rescan, Manage devices and Exit; optional hover details |
@@ -77,7 +77,7 @@ These are implemented reading paths, not a list of devices certified by physical
 
 GameSir G7 Pro and other specific controllers still need hardware validation. Battery accuracy, charging status and connection-mode support depend on the hardware and drivers.
 
-Automatic device merging is enabled by default. Reliable serial numbers and confirmed hardware identifiers can link duplicate sources; a model name alone is insufficient. Manual merge and separate controls are available for ambiguous devices.
+Automatic device merging is enabled by default. Confirmed hardware identifiers take priority. A unique Logitech HID / G HUB pair with the same canonical model may also be grouped reversibly when there are no conflicting IDs or manual separation rules. Multiple records from either provider prevent inferred matching. Inferred links are not saved as confirmed hardware identity. Remembered offline records preserve grouping during rescan. Manual merge and separate remain available.
 
 ## Experimental native taskbar layout
 
@@ -124,7 +124,7 @@ This is an unofficial modification, not endorsed by Logitech, ASUS, Microsoft, A
 LGSTrayEx Rings 是一款 Windows 11 无线设备电量监控工具，以圆环形式在任务栏展示鼠标、耳机、键盘和手柄的电量。
 
 - 支持自定义圆环颜色、大小、间距、充电流光和上下线动画。
-- 支持自动发现设备、可靠身份自动合并、拖拽排序、隐藏及重命名。
+- 支持自动发现设备、可靠身份及唯一罗技跨来源型号自动合并、拖拽排序、隐藏及重命名。
 - 支持多档低电量提醒、独立提示音与主题保存。
 - ROG Harpe Ace Mini OMNI 读取在后台自动执行，无须专用设置开关。
 - 内置原生任务栏占位仍为实验性功能；不兼容时回退至安全位置。

@@ -29,6 +29,7 @@ internal sealed class RingPreferences
     public bool Alerts {get;set;}=true; public bool Sound {get;set;}=true; public string Rules {get;set;}="20:30,10:15,5:5";
     public bool AutoDeduplicate {get;set;}=true;
     public Dictionary<string,string> AutomaticAliases {get;set;}=new();
+    public List<string> ModelGroupRoots {get;set;}=[];
     public Dictionary<string,string> DeviceAliases {get;set;}=new();
     public Dictionary<string,string> PreferredSources {get;set;}=new();
     public List<string> IgnoredDevices {get;set;}=[];

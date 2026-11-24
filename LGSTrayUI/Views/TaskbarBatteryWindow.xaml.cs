@@ -117,8 +117,9 @@ public partial class TaskbarBatteryWindow : Window
         foreach(var key in _remembered.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
             _remembered[key]=_remembered[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
         var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);
+        int previousModelRoots=c.ModelGroupRoots.Count;
         _groups=DeviceIdentityManager.Group(_remembered.Values,c);
-        if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value))inventoryChanged=true;
+        if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)inventoryChanged=true;
         foreach(var group in _groups){
             var key=group.Reading.Key;
             if(group.Sources.All(d=>!previousRaw.Contains(d.Key)&&!migrated.Contains(d.Key))&&!previousKeys.Contains(key)){
