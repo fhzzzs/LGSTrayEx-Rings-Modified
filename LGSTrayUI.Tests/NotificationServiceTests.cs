@@ -20,7 +20,7 @@ public class NotificationServiceTests {
              Action<DeviceBatteryUpdatedMessage> batteryHandler,
              Action<SystemSuspendingMessage> suspendHandler,
              Action<SystemResumingMessage> resumeHandler) 
-    CreateService(AppSettings appSettings) {
+    CreateService(AppSettings appSettings, Func<bool>? ringAlertsEnabled = null) {
         var manager = new Mock<INotificationManager>(MockBehavior.Loose);
         var settings = new Mock<IOptions<AppSettings>>();
         
@@ -49,7 +49,8 @@ public class NotificationServiceTests {
             settings.Object, 
             batterySubscriber.Object,
             suspendSubscriber.Object,
-            resumeSubscriber.Object);
+            resumeSubscriber.Object,
+            ringAlertsEnabled ?? (() => false));
             
         service.StartAsync(CancellationToken.None); // Start immediately (wires up subscriptions)
 
@@ -144,6 +145,26 @@ public class NotificationServiceTests {
         Assert.Contains("almost full", (string)invocation.Arguments[0]);
         Assert.Contains("80%", (string)invocation.Arguments[1]);
         Assert.Equal(NotificationType.Success, invocation.Arguments[2]);
+    }
+
+    [Fact]
+    public void LegacyLowBatteryNotificationsAreSuppressedOnlyWhileRingAlertsEnabled() {
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
+                Enabled = true, NotifyOnBatteryLow = true, BatteryLowThreshold = 30
+            }
+        };
+        bool ringAlertsEnabled = true;
+        var (service, manager, batteryHandler, _, _) = CreateService(appSettings, () => ringAlertsEnabled);
+        var device = CreateDevice("dev1", "Test Device");
+        UpdateBattery(device, batteryHandler, 50);
+        manager.Invocations.Clear();
+        UpdateBattery(device, batteryHandler, 30);
+        Assert.Empty(manager.Invocations);
+        ringAlertsEnabled = false;
+        UpdateBattery(device, batteryHandler, 29);
+        Assert.Single(manager.Invocations);
+        Assert.Contains("Battery Low", (string)manager.Invocations[0].Arguments[0]);
     }
 
     [Fact]

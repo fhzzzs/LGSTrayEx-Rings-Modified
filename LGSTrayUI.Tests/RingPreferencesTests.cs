@@ -10,6 +10,13 @@ public class RingPreferencesTests
         Assert.Equal(new[]{(20,30),(10,15),(5,0)},rules);
     }
     [Fact]
+    public void LegacyAsusToggleDoesNotSurviveSettingsRoundTrip()
+    {
+        var p=System.Text.Json.JsonSerializer.Deserialize<LGSTrayUI.RingPreferences>("{\"UseAsus\":false,\"Gap\":9}")!;
+        Assert.Equal(9d,p.Gap);
+        Assert.DoesNotContain("UseAsus",System.Text.Json.JsonSerializer.Serialize(p));
+    }
+    [Fact]
     public void DefaultAnimationTimingsMatchDesign()
     {
         var p=new LGSTrayUI.RingPreferences();

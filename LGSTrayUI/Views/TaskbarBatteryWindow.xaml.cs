@@ -195,15 +195,15 @@ public partial class TaskbarBatteryWindow : Window
     }
     private async Task ScanAsusAsync(){
         _scanningAsus=true;
-        try{var readings=await Task.Run(AsusBatteryReader.Read);if(!_closed&&RingConfig.Current.UseAsus){_asus=readings;QueueRefresh();}}
+        try{var readings=await Task.Run(AsusBatteryReader.Read);if(!_closed){_asus=readings;QueueRefresh();}}
         catch(Exception ex){DiagnosticLogger.LogWarning("ASUS battery: "+ex.Message);if(!_closed){_asus=Array.Empty<TaskbarBattery>();QueueRefresh();}}
         finally{_scanningAsus=false;_nextAsus=DateTimeOffset.UtcNow.AddSeconds(10);}
     }
     private void PollExtraDevices()
     {
         var now = DateTimeOffset.UtcNow;
-        if(!RingConfig.Current.UseAsus){if(_asus.Count>0){_asus=Array.Empty<TaskbarBattery>();QueueRefresh();}}
-        else if(!_scanningAsus&&now>=_nextAsus)_=ScanAsusAsync();
+        // ROG OMNI is an automatic hardware provider, not a user preference.
+        if(!_scanningAsus&&now>=_nextAsus)_=ScanAsusAsync();
         if (now >= _nextControllers)
         {
             _nextControllers = now.AddSeconds(Math.Clamp(RingConfig.Current.PollSeconds,.5,60));

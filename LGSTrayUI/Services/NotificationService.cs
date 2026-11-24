@@ -27,6 +27,7 @@ public class NotificationService : IHostedService
 {
     private readonly INotificationManager _notificationManager;
     private readonly NotificationSettings _notificationSettings;
+    private readonly Func<bool> _ringAlertsEnabled;
     
     private readonly ISubscriber<DeviceBatteryUpdatedMessage> _batterySubscriber;
     private readonly ISubscriber<SystemSuspendingMessage> _suspendSubscriber;
@@ -50,7 +51,19 @@ public class NotificationService : IHostedService
         ISubscriber<DeviceBatteryUpdatedMessage> batterySubscriber,
         ISubscriber<SystemSuspendingMessage> suspendSubscriber,
         ISubscriber<SystemResumingMessage> resumeSubscriber)
+        : this(notificationManager, appSettings, batterySubscriber, suspendSubscriber, resumeSubscriber, () => RingConfig.Current.Alerts)
     {
+    }
+
+    internal NotificationService(
+        INotificationManager notificationManager,
+        IOptions<AppSettings> appSettings,
+        ISubscriber<DeviceBatteryUpdatedMessage> batterySubscriber,
+        ISubscriber<SystemSuspendingMessage> suspendSubscriber,
+        ISubscriber<SystemResumingMessage> resumeSubscriber,
+        Func<bool> ringAlertsEnabled)
+    {
+        _ringAlertsEnabled = ringAlertsEnabled;
         _notificationManager = notificationManager;
         _notificationSettings = appSettings.Value.Notifications;
         
@@ -211,7 +224,7 @@ public class NotificationService : IHostedService
         }
 
         // Low battery notification logic
-        if (!_notificationSettings.NotifyOnBatteryLow || RingConfig.Current.Alerts)
+        if (!_notificationSettings.NotifyOnBatteryLow || _ringAlertsEnabled())
         {
             return;
         }
