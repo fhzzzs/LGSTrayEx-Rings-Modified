@@ -178,8 +178,8 @@ struct Factory : implements<Factory,IClassFactory,non_agile>{
 };
 }
 // Only the Explorer shell's primary taskbar process may instantiate the provider.
-extern "C" __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID clsid,REFIID iid,void** out){
+STDAPI DllGetClassObject(REFCLSID clsid,REFIID iid,void** out){
     if(!out)return E_POINTER;*out=nullptr;if(clsid!=SlotClsid||!PrimaryBar())return CLASS_E_CLASSNOTAVAILABLE;
     try{return make<Factory>().as(iid,out);}catch(...){return to_hresult();}
 }
-extern "C" __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow(){return S_FALSE;}
+STDAPI DllCanUnloadNow(){return S_FALSE;}
