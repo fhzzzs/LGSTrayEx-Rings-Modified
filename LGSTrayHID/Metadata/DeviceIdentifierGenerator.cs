@@ -1,0 +1,38 @@
+using System.Security.Cryptography;
+using System.Text;
+
+namespace LGSTrayHID.Metadata;
+
+/// <summary>
+/// Generates unique device identifiers based on available device information.
+/// </summary>
+public static class DeviceIdentifierGenerator
+{
+    /// <summary>
+    /// Generates a unique device identifier using priority order:
+    /// 1. Serial number (if available)
+    /// 2. Unit ID + Model ID combination (if available)
+    /// 3. Stable SHA256 hash of device name (fallback)
+    /// </summary>
+    /// <param name="ids">Device hardware identity (model, unit, serial)</param>
+    /// <param name="deviceName">Device name (used for hash fallback)</param>
+    /// <returns>Unique device identifier string</returns>
+    public static string GenerateIdentifier(DeviceIdentity ids, string deviceName)
+    {
+        // Priority 1: Use serial number if available
+        if (!string.IsNullOrEmpty(ids.SerialNumber))
+        {
+            return ids.SerialNumber;
+        }
+
+        // Priority 2: Use UnitID-ModelID combination if available
+        if (!string.IsNullOrEmpty(ids.UnitId) && !string.IsNullOrEmpty(ids.ModelId))
+        {
+            return $"{ids.UnitId}-{ids.ModelId}";
+        }
+
+        // Priority 3: Stable SHA256 hash of device name (first 8 hex chars).        
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(deviceName ?? string.Empty));
+        return Convert.ToHexString(hash, 0, 4);
+    }
+}

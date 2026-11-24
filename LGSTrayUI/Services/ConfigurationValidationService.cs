@@ -1,0 +1,187 @@
+using LGSTrayPrimitives;
+using LGSTrayPrimitives.Messages;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using System.Windows;
+using MessagePipe;
+using Tommy.Extensions.Configuration;
+using LGSTrayUI.Interfaces;
+
+namespace LGSTrayUI.Services;
+
+public class ConfigurationValidationService : IConfigurationValidationService, IDisposable
+{
+    private readonly IDisposable? _subscription;
+
+    // Parameterless constructor for early instantiation (before DI container built)
+    public ConfigurationValidationService()
+    {
+        _subscription = null;
+    }
+
+    // DI constructor for when subscriber is available
+    public ConfigurationValidationService(ISubscriber<HttpServerErrorMessage> subscriber)
+    {
+        // Register to receive HTTP server error messages
+        _subscription = subscriber.Subscribe(OnHttpServerError);
+    }
+
+    private void OnHttpServerError(HttpServerErrorMessage message)
+    {
+        HandleHttpServerStartupError(message.ErrorMessage, message.Port);
+    }
+
+    public void Dispose()
+    {
+        _subscription?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    public async Task<bool> LoadAndValidateConfiguration(ConfigurationManager config)
+    {
+        string settingsPath = Path.Combine(AppContext.BaseDirectory, SettingsFile.Name);
+        string localSettingsPath = Path.Combine(AppContext.BaseDirectory, SettingsFile.LocalName);
+
+        // If config file exists, always repair and merge before loading
+        if (File.Exists(settingsPath))
+        {
+            try
+            {
+                await RepairAndMergeConfiguration(settingsPath);
+            }
+            catch (Exception repairEx)
+            {
+                DiagnosticLogger.LogError($"Failed to repair/merge configuration: {repairEx.Message}");
+                // Continue anyway - try to load the config as-is
+            }
+        }
+
+        try
+        {
+            config.AddTomlFile(settingsPath);
+
+            // Load local overrides if present (dev settings, gitignored)
+            if (File.Exists(localSettingsPath))
+            {
+                config.AddTomlFile(localSettingsPath, optional: true, reloadOnChange: false);
+                DiagnosticLogger.Log($"Loaded local settings override: {SettingsFile.LocalName}");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Handle file not found, parsing errors, or invalid data
+            if (ex is FileNotFoundException || ex is InvalidDataException || ex is FormatException)
+            {
+                WriteEarlyError($"Settings load failed ({ex.GetType().Name}): {ex.Message}");
+                return await PromptForConfigurationReset(config, settingsPath, ex);
+            }
+
+            // Rethrow unexpected exceptions
+            WriteEarlyError($"Unexpected settings load error ({ex.GetType().Name}): {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task RepairAndMergeConfiguration(string settingsPath)
+    {
+        DiagnosticLogger.Log("Checking configuration for obsolete/missing keys...");
+        var settingsManager = new TomlSettingsManager(settingsPath);
+        settingsManager.Repair();              // Remove obsolete keys
+        settingsManager.MergeMissingKeys();    // Add missing keys from defaults
+        await Task.CompletedTask; // Keep async signature for consistency
+    }
+
+    /// <summary>
+    /// Writes an error to diagnostic.log unconditionally (before DiagnosticLogger is initialized).
+    /// </summary>
+    private static void WriteEarlyError(string message)
+    {
+        try
+        {
+            string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [SettingsLoad]: {message}{Environment.NewLine}";
+            File.AppendAllText(DiagnosticLogger.LogFilePath, line);
+        }
+        catch
+        {
+            // Ignore write failures — we're already in an error path
+        }
+    }
+
+    private async Task<bool> PromptForConfigurationReset(ConfigurationManager config, string settingsPath, Exception? cause = null)
+    {
+        string detail = cause is not null ? $"\n\nError: {cause.Message}" : string.Empty;
+        var result = MessageBox.Show(
+            $"Failed to read settings, do you want reset to default?{detail}",
+            "LGSTray - Settings Load Error",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Error,
+            MessageBoxResult.No
+        );
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await File.WriteAllBytesAsync(settingsPath, LGSTrayUI.Properties.Resources.defaultAppsettings);
+                DiagnosticLogger.Log("Configuration reset to defaults.");
+            }
+            catch (Exception writeEx)
+            {
+                DiagnosticLogger.LogError($"Failed to write default configuration: {writeEx.Message}");
+                ShowErrorAndShutdown("LGSTray - Fatal Error", "Could not write default configuration file.");
+                return false;
+            }
+        }
+
+        try
+        {
+            config.AddTomlFile(settingsPath);
+            return true;
+        }
+        catch (Exception loadEx)
+        {
+            DiagnosticLogger.LogError($"Failed to load configuration after reset attempt: {loadEx.Message}");
+            ShowErrorAndShutdown("LGSTray - Fatal Error", "Could not load configuration file.");
+            return false;
+        }
+    }
+
+    public bool ValidateAndEnforceSoftwareId(AppSettings appSettings)
+    {
+        if (appSettings.Native.Enabled && !appSettings.Native.IsSoftwareIdValid())
+        {
+            string message = appSettings.Native.GetSoftwareIdErrorMessage();
+            ShowErrorAndShutdown("LGSTray - Invalid Configuration", message);
+            return false;
+        }
+        return true;
+    }
+
+    public void HandleHttpServerStartupError(string errorMessage, int port)
+    {
+        string message = $"LGSTray failed to start HTTP server on port {port}.\n\n" +
+                        $"Error: {errorMessage}\n\n" +
+                        $"The port may be in use by another application or user.\n\n" +
+                        $"To fix this:\n" +
+                        $"• Close other applications using port {port}\n" +
+                        $"• OR configure a different port in appsettings.toml [HTTPServer] section\n" +
+                        $"• OR disable the HTTP server (enabled = false)\n\n" +
+                        $"Note: The application will close.";
+
+        ShowErrorAndShutdown("LGSTray - HTTP Server Error", message);
+    }
+
+    private void ShowErrorAndShutdown(string title, string message)
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            DiagnosticLogger.LogError($"Configuration validation failed: {title}");
+            Application.Current.Shutdown();
+        });
+    }
+}

@@ -1,0 +1,366 @@
+﻿using Hardcodet.Wpf.TaskbarNotification;
+using LGSTrayCore;
+using LGSTrayPrimitives;
+using LGSTrayUI.Properties;
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
+using System.Runtime.InteropServices;
+
+namespace LGSTrayUI.IconDrawing;
+/// <summary>
+/// Provides static methods for drawing and updating battery and device icons for taskbar notifications.
+/// </summary>
+/// <remarks>This class offers utility methods to render battery status and device icons, including numeric and
+/// unknown states, for use with taskbar notification icons. It adapts icon appearance based on the current Windows
+/// theme and device charging status.
+/// <br> All members are static and thread safety is not guaranteed; callers should ensure
+/// thread safety if accessing from multiple threads.</br></remarks>
+public static partial class BatteryIconDrawing
+{
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyIcon(IntPtr handle);
+
+    // Configurable battery bar settings
+    private static bool _enableBatteryBar = true;
+    private static Color _mouseColor = Color.SlateBlue;
+    private static Color _keyboardColor = Color.SlateGray;
+    private static Color _headsetColor = Color.Blue;
+    private static Color _defaultColor = Color.Gray;
+
+    // Icon mode battery fill colors (level-based, per theme)
+    private static Color _iconLowColorLight = Color.FromArgb(255, 0xB0, 0x30, 0x30);
+    private static Color _iconMediumColorLight = Color.FromArgb(255, 0xB0, 0x90, 0x20);
+    private static Color _iconHighColorLight = Color.FromArgb(255, 0x40, 0xA0, 0x20);
+    private static Color _iconLowColorDark = Color.FromArgb(255, 0xE8, 0x8B, 0x8B);
+    private static Color _iconMediumColorDark = Color.FromArgb(255, 0xF2, 0xD4, 0x79);
+    private static Color _iconHighColorDark = Color.FromArgb(255, 0xB4, 0xF2, 0xA0);
+
+    // Battery interior bounds as fractions of imageSize (measured from Indicator*.png)
+    // Inset from the inner border edge to avoid bleeding under anti-aliased frame pixels
+    private const float FillLeft = 314f / 512f;
+    private const float FillRight = 442f / 512f;
+    private const float FillTop = 148f / 512f;
+    private const float FillBottom = 400f / 512f;
+
+    /// <summary>
+    /// Configures battery bar settings from application settings.
+    /// Should be called once at application startup.
+    /// </summary>
+    public static void Configure(UISettings settings)
+    {
+        _enableBatteryBar = settings.EnableBatteryBar;
+        _mouseColor = ParseColor(settings.MouseColor, Color.SlateBlue);
+        _keyboardColor = ParseColor(settings.KeyboardColor, Color.SlateGray);
+        _headsetColor = ParseColor(settings.HeadsetColor, Color.Blue);
+        _defaultColor = ParseColor(settings.DefaultColor, Color.Gray);
+
+        _iconLowColorLight = ParseColor(settings.IconLowColorLight, _iconLowColorLight);
+        _iconMediumColorLight = ParseColor(settings.IconMediumColorLight, _iconMediumColorLight);
+        _iconHighColorLight = ParseColor(settings.IconHighColorLight, _iconHighColorLight);
+        _iconLowColorDark = ParseColor(settings.IconLowColorDark, _iconLowColorDark);
+        _iconMediumColorDark = ParseColor(settings.IconMediumColorDark, _iconMediumColorDark);
+        _iconHighColorDark = ParseColor(settings.IconHighColorDark, _iconHighColorDark);
+    }
+
+    private static Color ParseColor(string colorString, Color fallback)
+    {
+        if (string.IsNullOrWhiteSpace(colorString))
+            return fallback;
+
+        try
+        {
+            // Try parsing as named color first (e.g., "SlateBlue")
+            var namedColor = Color.FromName(colorString);
+            if (namedColor.IsKnownColor || namedColor.A != 0)
+                return namedColor;
+
+            // Try parsing as hex color (e.g., "#6A5ACD" or "6A5ACD")
+            var hex = colorString.TrimStart('#');
+            if (hex.Length == 6 && int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int rgb))
+            {
+                return Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            }
+        }
+        catch
+        {
+            // Fall through to return fallback
+        }
+
+        return fallback;
+    }
+
+    private static Bitmap Mouse => CheckTheme.LightTheme ? Resources.Mouse : Resources.Mouse_dark;
+    private static Bitmap Keyboard => CheckTheme.LightTheme ? Resources.Keyboard : Resources.Keyboard_dark;
+    private static Bitmap Headset => CheckTheme.LightTheme ? Resources.Headset : Resources.Headset_dark;
+    private static Bitmap Battery => CheckTheme.LightTheme ? Resources.Battery : Resources.Battery_dark;
+    private static Bitmap Missing => CheckTheme.LightTheme ? Resources.Missing : Resources.Missing_dark;
+    private static Bitmap Charging => CheckTheme.LightTheme ? Resources.Charging : Resources.Charging_dark;
+
+    private static Bitmap GetDeviceIcon(LogiDevice device) => device.DeviceType switch
+    {
+        DeviceType.Keyboard => Keyboard,
+        DeviceType.Headset => Headset,
+        _ => Mouse,
+    };
+
+    private static void DrawBatteryFill(Graphics g, LogiDevice device, int imageSize)
+    {
+        if (!device.IsVisuallyOnline || device.BatteryPercentage < 0)
+            return;
+
+        // Select color based on battery level and theme
+        Color fillColor;
+        bool light = CheckTheme.LightTheme;
+        if (device.BatteryPercentage < 10)
+            fillColor = light ? _iconLowColorLight : _iconLowColorDark;
+        else if (device.BatteryPercentage < 50)
+            fillColor = light ? _iconMediumColorLight : _iconMediumColorDark;
+        else
+            fillColor = light ? _iconHighColorLight : _iconHighColorDark;
+
+        // Calculate interior bounds scaled to current image size
+        int left = (int)(FillLeft * imageSize);
+        int right = (int)(FillRight * imageSize);
+        int top = (int)(FillTop * imageSize);
+        int bottom = (int)(FillBottom * imageSize);
+
+        int interiorWidth = right - left;
+        int interiorHeight = bottom - top;
+
+        // Fill height proportional to battery percentage, drawn from bottom
+        double pct = Math.Clamp(device.BatteryPercentage, 0, 100);
+        int fillHeight = (int)(pct / 100.0 * interiorHeight);
+        int fillY = bottom - fillHeight;
+
+        using Brush brush = new SolidBrush(fillColor);
+        g.FillRectangle(brush, left, fillY, interiorWidth, fillHeight);
+    }
+
+    public static void DrawUnknown(TaskbarIcon taskbarIcon)
+    {
+        DrawIcon(taskbarIcon, new()
+        {
+            BatteryPercentage = -1,
+            IsOnline = false,
+            IsVisuallyOnline = false
+        });
+    }
+
+    public static void DrawIcon(TaskbarIcon taskbarIcon, LogiDevice device)
+    {
+        var ImageSize = (int)(96 * TaskbarDpi.Scale);
+        var destRect = new Rectangle(0, 0, ImageSize, ImageSize);
+        using var b = new Bitmap(ImageSize, ImageSize);
+        using var g = Graphics.FromImage(b);
+        g.CompositingMode = CompositingMode.SourceOver;
+        g.CompositingQuality = CompositingQuality.HighQuality;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.SmoothingMode = SmoothingMode.HighQuality;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+        using var wrapMode = new ImageAttributes();
+        wrapMode.SetWrapMode(WrapMode.TileFlipXY);
+
+        // Draw battery fill or missing indicator (bottom layer)
+        if (!device.IsVisuallyOnline || device.BatteryPercentage < 0)
+        {
+            Bitmap missing = Missing;
+            g.DrawImage(missing, destRect, 0, 0, missing.Width, missing.Height, GraphicsUnit.Pixel, wrapMode);
+            missing.Dispose();
+        }
+        else
+        {
+            DrawBatteryFill(g, device, ImageSize);
+        }
+
+        // Draw battery frame and device icon layers
+        Bitmap[] layers = [Battery, GetDeviceIcon(device)];
+
+        foreach (var image in layers)
+        {
+            g.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
+            image.Dispose();
+        }
+
+        // Overlay charging indicator if device is charging
+        if (device.PowerSupplyStatus == PowerSupplyStatus.CHARGING)
+        {
+            // Use theme-appropriate charging icon
+            Bitmap chargingOverlay = Charging;
+
+            // Scale overlay
+            int overlaySize = (int)(ImageSize * 1.50);
+
+            // Position at bottom-center corner with small margin                
+            int marginLeft = -(int)(ImageSize * 0.30);
+            int marginTop = (int)(ImageSize * 0.50);
+            int x = ImageSize - overlaySize + marginLeft;
+            int y = ImageSize - overlaySize + marginTop;
+
+
+            Rectangle overlayRect = new(x, y, overlaySize, overlaySize);
+
+            //Create ColorMatrix to render charging icon
+            //using var blackAttributes = new ImageAttributes();
+            //ColorMatrix colorMatrix = new ColorMatrix(new float[][]
+            //{
+            //    new float[] {0, 0, 0, 0, 0},        // Red channel 
+            //    new float[] {0, 0, 0, 0, 0},        // Green channel 
+            //    new float[] {0, 0, 255, 0, 0},        // Blue channel 
+            //    new float[] {0, 0, 0, 1, 0},        // Alpha channel (preserve)
+            //    new float[] {0, 0, 0, 0, 1}         // Translation
+            //});
+            //blackAttributes.SetColorMatrix(colorMatrix);
+
+            g.DrawImage(chargingOverlay, overlayRect, 0, 0,
+                        chargingOverlay.Width, chargingOverlay.Height,
+                        GraphicsUnit.Pixel);
+
+            chargingOverlay.Dispose();
+        }
+
+        g.Save();
+
+        IntPtr iconHandle = b.GetHicon();
+        Icon tempManagedRes = Icon.FromHandle(iconHandle);
+        taskbarIcon.Icon = (Icon)tempManagedRes.Clone();
+        tempManagedRes.Dispose();
+        DestroyIcon(iconHandle);
+    }
+
+    public static void DrawNumeric(TaskbarIcon taskbarIcon, LogiDevice device)
+    {
+        // Use the exact size the taskbar displays tray icons at: 16px scaled by DPI, rounded
+        // (16 at 100%, 18 at 110%, 20 at 125%, ...). Any other size gets resampled and blurs the text.
+        int size = (int)Math.Round(16 * TaskbarDpi.Current / 96.0);
+        int width = size;
+        int height = size;
+
+        // Round once so the font choice, text and bar all agree (99.6 displays and sizes as 100)
+        int percentage = (int)Math.Round(device.BatteryPercentage, MidpointRounding.AwayFromZero);
+        bool isCharging = device.PowerSupplyStatus == PowerSupplyStatus.CHARGING;
+        bool drawPercentage = device.IsVisuallyOnline && (percentage >= 0);
+        bool drawBatteryBar = _enableBatteryBar && drawPercentage;        
+
+        using Bitmap bitmap = new(width, height);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            // High quality compositing avoids dark halos on transparent backgrounds
+            g.CompositingQuality = CompositingQuality.HighQuality;
+
+            // "AntiAliasGridFit" is the magic setting. 
+            // It aligns text to the pixel grid (sharpness) but smooths edges.
+            // Note: Do NOT use ClearType on transparent backgrounds; it creates ugly black fringes.
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            // Draw battery bar if enabled
+            if (drawBatteryBar)
+            {
+                Color barColor = device.DeviceType switch
+                {
+                    DeviceType.Mouse => _mouseColor,
+                    DeviceType.Keyboard => _keyboardColor,
+                    DeviceType.Headset => _headsetColor,
+                    _ => _defaultColor,
+                };
+                // Draw 2px bottom battery bar
+                using Brush bgBrush = new SolidBrush(barColor);
+                g.FillRectangle(bgBrush, 0, height - 2, (int)Math.Round(percentage / 100.0 * width), 2);
+            }
+
+            // Font style and color
+            FontStyle fontStyle = isCharging ? FontStyle.Bold : FontStyle.Regular;
+            Color textColor;
+
+            if (CheckTheme.LightTheme)
+            {
+                textColor = isCharging ? Color.DarkGreen : Color.Black;
+            }
+            else
+            {
+                textColor = isCharging ? Color.LightGreen : Color.White;
+            }
+
+            // Font size and text
+            float emSize = drawPercentage && percentage == 100 ? height * 0.6f : height * 0.7f; // smaller font for 100 so it does not clip
+            using Font font = new("Segoe UI Variable", emSize, fontStyle, GraphicsUnit.Pixel);
+            string text = drawPercentage ? $"{percentage}" : "?";
+
+            // Text Centering
+            // Render on a scratch canvas first and center the actual glyph pixels; MeasureString
+            // includes leading and descender space, which pushes digits below the icon center.
+            using Bitmap glyphs = new(width * 2, height * 2, PixelFormat.Format32bppArgb);
+            using (Graphics gg = Graphics.FromImage(glyphs))
+            {
+                gg.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                using Brush textBrush = new SolidBrush(textColor);
+                gg.DrawString(text, font, textBrush, width / 2f, height / 2f);
+            }
+
+            Rectangle ink = GetInkBounds(glyphs);
+            int x = (width - ink.Width) / 2;
+            int y = (height - ink.Height) / 2;
+
+            // Copy 1:1 at whole-pixel offsets so the glyphs are not resampled
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(glyphs, new Rectangle(x, y, ink.Width, ink.Height), ink, GraphicsUnit.Pixel);
+        }
+
+        // Icon
+        IntPtr iconHandle = bitmap.GetHicon();
+        var oldIcon = taskbarIcon.Icon;
+
+        using (Icon tempIcon = Icon.FromHandle(iconHandle))
+        {
+            taskbarIcon.Icon = (Icon)tempIcon.Clone();
+        }
+
+        // Cleanup
+        DestroyIcon(iconHandle);
+        oldIcon?.Dispose();
+    }
+
+    /// <summary>
+    /// Returns the bounds of the non-transparent pixels in the bitmap.
+    /// </summary>
+    private static Rectangle GetInkBounds(Bitmap bitmap)
+    {
+        BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+            ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int left = bitmap.Width, top = bitmap.Height, right = -1, bottom = -1;
+            int[] row = new int[bitmap.Width];
+
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+                for (int x = 0; x < row.Length; x++)
+                {
+                    // Skip fully transparent pixels
+                    if (row[x] >>> 24 == 0)
+                        continue;
+
+                    left = Math.Min(left, x);
+                    right = Math.Max(right, x);
+                    top = Math.Min(top, y);
+                    bottom = Math.Max(bottom, y);
+                }
+            }
+
+            return right < 0 ? Rectangle.Empty : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+}

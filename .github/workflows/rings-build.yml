@@ -1,0 +1,29 @@
+name: Rings Windows build
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+    tags: ['rings-*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - shell: pwsh
+        run: ./BUILD-RINGS.ps1 -NoOpen -Test
+      - shell: pwsh
+        run: |
+          $dll = "bin/Release/Publish/win-x64/Standalone/NativeLayout.dll"
+          if (!(Test-Path $dll)) { throw "NativeLayout.dll missing" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rings-portable-x64
+          path: bin/LGSTrayEx-Rings-Portable-x64.zip
+          if-no-files-found: error

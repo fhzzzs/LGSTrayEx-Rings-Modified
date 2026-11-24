@@ -1,0 +1,17 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Windows.Media;
+using LGSTrayPrimitives;
+namespace LGSTrayUI;
+// Original synthesized tones; no third-party audio assets or network needed.
+internal static class RingSounds
+{
+    internal static readonly string[] Builtins=["None","Soft Ding","Glass","Pop","Bell","Alert","Chime","Windows Default"];
+    private static string Folder=>Path.Combine(AppDataPaths.LocalAppDataDir,"ring-sounds");
+    private static MediaPlayer? player;
+    internal static string[] Options()=>Builtins.Concat(Directory.Exists(Folder)?Directory.GetFiles(Folder,"custom-*.wav").Select(f=>"Custom: "+Path.GetFileNameWithoutExtension(f)[7..]):Array.Empty<string>()).ToArray();
+    internal static string Import(string file){using(var r=new BinaryReader(File.OpenRead(file))){if(r.BaseStream.Length<44||r.BaseStream.Length>20*1024*1024||new string(r.ReadChars(4))!="RIFF")throw new FormatException("请选择有效 WAV 文件（最大 20 MB）。");r.ReadInt32();if(new string(r.ReadChars(4))!="WAVE")throw new FormatException("不是 WAV 音频。");}Directory.CreateDirectory(Folder);string name=Path.GetFileNameWithoutExtension(file);string dest=Path.Combine(Folder,"custom-"+name+".wav");if(!string.Equals(Path.GetFullPath(file),Path.GetFullPath(dest),StringComparison.OrdinalIgnoreCase))File.Copy(file,dest,true);return "Custom: "+name;}
+    internal static void Play(AlertAudio audio,Action<string>? error=null){try{player?.Close();player=null;if(audio.Sound=="None"||audio.Volume<=0)return;if(audio.Sound=="Windows Default"){System.Media.SystemSounds.Exclamation.Play();return;}Directory.CreateDirectory(Folder);string file;if(audio.Sound.StartsWith("Custom: ",StringComparison.Ordinal)){var name=audio.Sound[8..];if(name!=Path.GetFileName(name))throw new FormatException("无效提示音名称");file=Path.Combine(Folder,"custom-"+name+".wav");}else{string name=Builtins.Contains(audio.Sound)?audio.Sound:"Soft Ding";file=Path.Combine(Folder,"builtin-"+name+".wav");if(!File.Exists(file))Generate(file,name);}if(!File.Exists(file))throw new FileNotFoundException("提示音文件不存在。",file);var p=new MediaPlayer{Volume=Math.Clamp(audio.Volume/100,0,1)};player=p;p.MediaFailed+=(_,e)=>{if(player==p)error?.Invoke(e.ErrorException.Message);};p.Open(new Uri(file,UriKind.Absolute));p.Play();}catch(Exception ex){error?.Invoke(ex.Message);DiagnosticLogger.LogWarning("Ring sound: "+ex.Message);}}
+    private static void Generate(string path,string name){var notes=name switch{"Glass"=>new[]{(1046d,.13),(1568d,.22)},"Pop"=>new[]{(540d,.12)},"Bell"=>new[]{(660d,.22),(880d,.25)},"Alert"=>new[]{(880d,.15),(880d,.15),(1175d,.22)},"Chime"=>new[]{(523d,.14),(659d,.14),(784d,.26)},_=>new[]{(784d,.28)}};const int rate=22050;var data=new System.Collections.Generic.List<short>();foreach(var (freq,seconds) in notes){int n=(int)(rate*seconds);for(int i=0;i<n;i++){double t=i/(double)rate,env=Math.Min(1,t/.008)*Math.Pow(1-i/(double)n,2);data.Add((short)(14000*env*(Math.Sin(2*Math.PI*freq*t)+.2*Math.Sin(4*Math.PI*freq*t))/1.2));}data.AddRange(Enumerable.Repeat((short)0,rate/25));}using var w=new BinaryWriter(File.Create(path));w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));w.Write(36+2*data.Count);w.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));w.Write(16);w.Write((short)1);w.Write((short)1);w.Write(rate);w.Write(rate*2);w.Write((short)2);w.Write((short)16);w.Write(System.Text.Encoding.ASCII.GetBytes("data"));w.Write(data.Count*2);foreach(short x in data)w.Write(x);}
+}

@@ -1,0 +1,614 @@
+using LGSTrayHID.Battery;
+using LGSTrayHID.Features;
+using LGSTrayHID.Metadata;
+using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
+using LGSTrayPrimitives.MessageStructs;
+using LGSTrayPrimitives.Retry;
+
+
+namespace LGSTrayHID;
+
+public class HidppDevice
+{
+    public HidppReceiver Parent { get; init; }
+    public byte DeviceIdx { get; init; }
+    public string DeviceName { get; private set; } = string.Empty;
+    public int DeviceType { get; private set; } = 3; //device type 3 = mouse
+    private string? _physicalId;
+    public string Identifier { get; private set; } = string.Empty;
+    public Dictionary<ushort, byte> FeatureMap { get; private set; } = [];
+
+
+    private IBatteryFeature? _batteryFeature;
+    private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
+    private int _consecutivePollFailures = 0;
+
+    // Battery event tracking
+    private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
+    private readonly EventThrottler _eventThrottler = new(500); // 500ms throttle window
+    private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
+    private bool _forceNextUpdate = false; // Force next battery update to bypass deduplication
+
+    // Configuration settings
+    
+    private readonly bool _isWiredModeDevice; // Fast-track init for wired mode devices
+    private readonly bool _keepPoolingWithEvents;
+    private readonly int _batteryEventDelayAfterOn;
+    private DateTimeOffset _deviceOnTime = DateTimeOffset.MinValue;
+
+    // Semaphore to prevent concurrent InitAsync calls
+    private readonly SemaphoreSlim _initSemaphore = new(1, 1);
+
+    // Stop/cancellation support (see StopAsync)
+    private readonly CancellationTokenSource _cancellationSource = new();
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(10);
+
+    private Task? _pollingTask;
+    private readonly CancellationTokenSource _poolingCts = new();
+    public void CancelPooling() => _poolingCts.Cancel();
+
+    // Track device online/offline state (independent of polling state)    
+    public bool IsOnline { get; set; } = false;
+
+    // True while an initialization is queued or running for this instance (set by the ON handler).
+    // A repeated ON event must not replace the instance and cancel an init that is about to succeed.
+    public volatile bool InitInFlight;
+
+    private int _stopCount = 0;
+    public bool IsStopped => _stopCount > 0;
+
+    public HidppDevice(HidppReceiver parent, byte deviceIdx, bool isWiredModeDevice = false)
+    {
+        Parent = parent;
+        DeviceIdx = deviceIdx;       
+        _isWiredModeDevice = isWiredModeDevice;
+        _keepPoolingWithEvents = GlobalSettings.settings.KeepPollingWithEvents;
+        _batteryEventDelayAfterOn = GlobalSettings.settings.BatteryEventDelayAfterOn;
+
+    }
+
+    /// <summary>
+    /// Initializes the device: ping test, feature enumeration, identification and battery setup,
+    /// then announces it (InitMessage) and starts battery polling.
+    /// Returns without announcing if the ping test fails or the instance is already stopped.
+    /// </summary>
+    /// <exception cref="OperationCanceledException">
+    /// The instance was stopped mid-init (replaced by a newer ON event, or its receiver removed).
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The parent receiver was disposed mid-init.</exception>
+    public async Task InitAsync()
+    {
+        await _initSemaphore.WaitAsync();
+        try
+        {
+            if (IsStopped)
+            {
+                return;
+            }
+
+            Hidpp20 ret;
+
+            // Sync Ping with retry logic for sleeping devices
+            // Wired mode devices: faster ping (1 consecutive, 3 max attempts)
+            // Wireless devices: standard ping (3 consecutive, 10 max attempts)
+            int pingThreshold = _isWiredModeDevice ? 1 : 3;
+            int maxPings = _isWiredModeDevice ? 3 : 10;
+
+            DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}" +
+                                (_isWiredModeDevice ? " (wired mode - fast ping)" : ""));
+
+            bool pingSuccess = await Parent.PingUntilConsecutiveSuccess(
+                deviceId: DeviceIdx,
+                successThreshold: pingThreshold,
+                maxPingsPerAttempt: maxPings,
+                backoffStrategy: GlobalSettings.InitBackoff,
+                cancellationToken: _cancellationSource.Token);
+
+            if (!pingSuccess)
+            {
+                DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {GlobalSettings.InitBackoff.MaxAttempts} attempts");
+                return;
+            }
+
+            DiagnosticLogger.Log($"HID device index {DeviceIdx} passed ping test");
+
+            // Find IFeatureSet (0x0001) - get its feature index
+            ret = await Parent.WriteRead20(Parent.RequestChannel,
+                                           Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET),
+                                           backoffStrategy: GlobalSettings.FeatureEnumBackoff,
+                                           cancellationToken: _cancellationSource.Token);
+            FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
+
+            // Get Feature Count
+            ret = await Parent.WriteRead20(Parent.RequestChannel,
+                                           Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]),
+                                           backoffStrategy: GlobalSettings.FeatureEnumBackoff,
+                                           cancellationToken: _cancellationSource.Token);
+            int featureCount = ret.GetParam(0);
+
+            // Enumerate Features with retry logic
+            // Wired mode devices use reduced retries for faster initialization
+            var enumBackoff = _isWiredModeDevice
+                ? new BackoffStrategy(
+                    initialDelay: TimeSpan.FromMilliseconds(100),
+                    maxDelay: TimeSpan.FromMilliseconds(200),
+                    initialTimeout: TimeSpan.FromMilliseconds(500),
+                    maxTimeout: TimeSpan.FromMilliseconds(500),
+                    multiplier: 1.5,
+                    maxAttempts: 2)
+                { ProfileName = "WiredFeatureEnum" }
+                : GlobalSettings.FeatureEnumBackoff;
+
+            for (byte i = 0; i <= featureCount; i++)
+            {
+                // Query feature with retry (backoff strategy handles retries)
+                ret = await Parent.WriteRead20(Parent.RequestChannel,
+                                               Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i),
+                                               backoffStrategy: enumBackoff,
+                                               cancellationToken: _cancellationSource.Token);
+
+                // Check if we got a valid response after all retries
+                if (ret.Length == 0)
+                {
+                    string wiredMsg = _isWiredModeDevice ? " (wired mode - continuing with partial features)" : "";
+                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i} " +
+                                                $"after {enumBackoff.MaxAttempts} attempts{wiredMsg}, " +
+                                                $"stopping enumeration");
+                    break;
+                }
+
+                ushort featureId = ret.GetFeatureId();
+
+                FeatureMap[featureId] = i;
+
+                // Log feature mapping
+                DiagnosticLogger.Verbose($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");
+            }
+
+            await InitPopulateAsync();
+        }
+        finally
+        {
+            _initSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads name, type, identity and firmware, selects the battery feature, announces the device
+    /// (InitMessage) and starts battery polling.
+    /// </summary>
+    /// <exception cref="OperationCanceledException">
+    /// The instance was stopped mid-init; thrown at the latest right before the InitMessage is published,
+    /// so a stopped instance never announces itself.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The parent receiver was disposed mid-init.</exception>
+    private async Task InitPopulateAsync()
+    {
+
+        DiagnosticLogger.Log($"Enumerating features for HID device index {DeviceIdx}");
+
+        // Device name
+        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_NAME, out byte featureId))
+        {
+            DeviceName = await DeviceMetadataRetriever.GetDeviceNameAsync(this, featureId);
+
+            // Check if device is filtered in settings
+            if (!DeviceFilterValidator.IsDeviceAllowed(DeviceName, GlobalSettings.settings.DisabledDevices, out string? matchedPattern))
+            {
+                DiagnosticLogger.LogWarning($"HID device '{DeviceName}' filtered by disabledDevices config (matched: '{matchedPattern}')");
+                return;
+            }
+
+            DeviceType = await DeviceMetadataRetriever.GetDeviceTypeAsync(this, featureId);
+        }
+        else
+        {
+            // Device does not have a name/Hidpp error ignore it
+            DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} missing feature 0x0005 (device name), ignoring");
+            return;
+        }
+
+        // Device identifier
+        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
+        {
+            var fwInfo = await DeviceMetadataRetriever.GetFirmwareInfoAsync(this, featureId);
+
+            string? serialNumber = null;
+            if (fwInfo.SerialNumberSupported)
+            {
+                serialNumber = await DeviceMetadataRetriever.GetSerialNumberAsync(this, featureId);
+                DiagnosticLogger.Log($"[{DeviceName}] Serial Number: {serialNumber}");
+            }
+            else
+            {
+                DiagnosticLogger.Log($"[{DeviceName}] Serial Number not supported by device firmware");
+                DiagnosticLogger.Log($"[{DeviceName}] UnitId: {fwInfo.UnitId} ModelId: {fwInfo.ModelId}");
+            }
+
+
+            _physicalId = HardwareIdentity.LogitechSerial(serialNumber,true);
+            Identifier = DeviceIdentifierGenerator.GenerateIdentifier(new DeviceIdentity(fwInfo.ModelId, fwInfo.UnitId, serialNumber), DeviceName);
+
+            if (fwInfo.EntityCount > 0)
+            {
+                var fw = await DeviceMetadataRetriever.GetFirmwareVersionStringAsync(this, featureId, fwInfo.EntityCount);
+                if (fw != null)
+                    DiagnosticLogger.Log($"[{DeviceName}] Firmware: {fw}");
+            }
+        }
+        else
+        {
+            // Device does not have firmware info - use device name hash as identifier
+            Identifier = DeviceIdentifierGenerator.GenerateIdentifier(default, DeviceName);
+        }
+
+        // Select battery feature using factory pattern
+        _batteryFeature = BatteryFeatureFactory.GetBatteryFeature(FeatureMap);
+
+        // Log battery feature presence and enable events
+        if (_batteryFeature != null)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Battery feature found: {_batteryFeature.FeatureName} (ID: {_batteryFeature.FeatureId:X})");
+
+            // Store the feature index for event routing
+            _batteryFeatureIndex = FeatureMap[_batteryFeature.FeatureId];
+
+            // Enable battery event reporting (HID++ 1.0 command)
+            // Note: Not all devices support this - failures are non-fatal
+            try
+            {
+                var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
+                var ret = await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
+                if (ret.Length == 0)
+                {
+                    DiagnosticLogger.Log($"[{DeviceName}] EnableBatteryReports not supported (modern device - events enabled by default)");
+                }
+                else
+                {
+                    DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled via HID++ 1.0 command");
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLogger.LogWarning($"[{DeviceName}] Exception enabling battery events: {ex.Message}");
+                // Non-fatal - device will fall back to polling
+            }
+        }
+        else
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] No battery feature found.");
+        }
+
+        // Stopped while a non-cancellable request was in flight (e.g. receiver removed): don't
+        // announce the device, or the UI would flip it back online after the offline notification
+        _cancellationSource.Token.ThrowIfCancellationRequested();
+
+        HidppManagerContext.Instance.SignalDeviceEvent(
+            IPCMessageType.INIT,
+            new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType){physicalId=_physicalId}
+        );
+
+        DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
+
+        // Mark device as online after successful initialization
+        IsOnline = true;
+
+        // Force next battery update to bypass deduplication
+        // This ensures fresh timestamp even if battery % unchanged after reconnect
+        _forceNextUpdate = true;
+
+        
+        if (_batteryFeature == null)
+        {
+            await Task.Delay(1000, _cancellationSource.Token);
+            return;
+        }        
+
+        await UpdateBattery();
+
+        // Start battery polling loop with cancellation support
+        // Pass pooling token as parameter to avoid disposal race
+        _pollingTask = Task.Run(() => PollBattery(_poolingCts.Token), _cancellationSource.Token);
+
+    }
+
+    /// <summary>
+    /// Notify device that it has been turned ON.
+    /// Starts the battery event delay window if configured.
+    /// </summary>
+    public void NotifyDeviceOn()
+    {
+        _deviceOnTime = DateTimeOffset.Now;
+        if (GlobalSettings.settings.BatteryEventDelayAfterOn > 0)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Device ON - battery events will be ignored for {GlobalSettings.settings.BatteryEventDelayAfterOn} seconds");
+        }
+    }
+
+    /// <summary>
+    /// Poll the battery status at regular intervals defined in settings
+    /// </summary>
+    /// <param name="poolingToken">Cancellation token for stopping polling operations</param>
+    private async Task PollBattery(CancellationToken poolingToken)
+    {
+        // Token is captured at Task.Run() call time, preventing disposal race
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationSource.Token, poolingToken);
+        var linkedToken = linkedCts.Token;
+
+        var pollInterval = GetPollInterval();
+        DiagnosticLogger.Log($"[{DeviceName}] Polling started (interval: {pollInterval}s).");
+
+        try
+        {
+            while (!linkedToken.IsCancellationRequested)
+            {
+                var now = DateTimeOffset.Now;
+                var nextPollTime = lastUpdate.AddSeconds(pollInterval);
+                var delayMs = Math.Max(0, (int)(nextPollTime - now).TotalMilliseconds);
+
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs, linkedToken);
+                }
+
+                bool updateSucceeded = false;
+                try
+                {                    
+                    updateSucceeded = await UpdateBattery();
+                    _consecutivePollFailures = 0; // Reset on success
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticLogger.LogWarning($"[{DeviceName}] Battery update failed: {ex.Message}");
+                    // Continue polling - will retry on next iteration
+                }
+
+                // CRITICAL: Prevent tight loop on repeated failures
+                // Use progressive backoff based on consecutive failures
+                if (!updateSucceeded)
+                {
+                    _consecutivePollFailures++;
+                    var retryDelay = GlobalSettings.BatteryBackoff.GetDelay(_consecutivePollFailures);
+                    DiagnosticLogger.Log($"[{DeviceName}] Adding {retryDelay.TotalSeconds}s retry delay after failure " +
+                                         $"(consecutive failures: {_consecutivePollFailures})");
+                    await Task.Delay(retryDelay, linkedToken);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled");
+        }
+
+        DiagnosticLogger.Log($"[{DeviceName}] Polling stopped.");
+    }
+
+    private int GetPollInterval()
+    {
+#if DEBUG
+                return 10;
+#else
+        // Wired mode devices use a fixed poll interval of 60 seconds
+        return _isWiredModeDevice ? 60 : Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600);
+#endif
+    }
+    /// <summary>
+    /// HID++ 2.0 Battery update logic
+    /// </summary>
+    /// <param name="forceIpcUpdate"></param>
+    /// <returns></returns>
+    public async Task<bool> UpdateBattery(bool forceIpcUpdate = false)
+    {
+        if (_batteryFeature == null)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
+            return false;
+        }
+        
+        // Ping device before battery read to ensure it's awake
+        var ping = await Parent.PingUntilConsecutiveSuccess(
+            deviceId: DeviceIdx,
+            successThreshold: 1,
+            maxPingsPerAttempt: 3,
+            backoffStrategy: GlobalSettings.PingBackoff,
+            cancellationToken: _cancellationSource.Token);
+
+        if (!ping)
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] Device unresponsive during battery update ping, skipping battery read.");
+            return false;
+        }
+        
+        var ret = await _batteryFeature.GetBatteryAsync(this);
+
+        if (ret == null)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");
+            return false;
+        }
+
+        var batStatus = ret.Value;
+        var now = DateTimeOffset.Now;
+        lastUpdate = now;
+
+        // Check reconnect flag and consume it
+        bool shouldForce = forceIpcUpdate || _forceNextUpdate;
+        if (_forceNextUpdate)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Forcing battery update after reconnect");
+            _forceNextUpdate = false; // Consume flag
+        }
+
+        // Publish update (handles deduplication, IPC, logging)
+        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", shouldForce);
+        return true;
+    }
+
+    /// <summary>
+    /// Attempt to handle a message as a battery event.
+    /// Returns true if the message was a battery event and was handled.
+    /// </summary>
+    /// <param name="message">The HID++ message to check</param>
+    /// <returns>True if this was a battery event and was handled, false otherwise</returns>
+    public async Task<bool> TryHandleBatteryEventAsync(Hidpp20 message)
+    {
+        // Check if we have a battery feature configured
+        if (_batteryFeature == null || _batteryFeatureIndex == 0xFF)
+        {
+            return false;
+        }
+
+        // Check if this message is a battery event for our feature
+        if (!message.IsBatteryEvent(_batteryFeatureIndex))
+        {
+            return false;
+        }
+
+        // Throttle events to prevent spam (some devices send rapid bursts)
+        var now = DateTimeOffset.Now;
+        if (!_eventThrottler.ShouldProcessEvent(now))
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Battery event throttled (too frequent)");
+            return true; // Handled but suppressed
+        }
+
+        // Parse the event using the battery feature
+        var batteryUpdate = _batteryFeature.ParseBatteryEvent(message);
+        if (batteryUpdate == null)
+        {
+            // Some features (e.g. 0x1F20 ADC) reuse the battery broadcast to announce the device
+            // became inactive (headset powered off / deep sleep). Solaar marks such devices offline;
+            // mirror that here instead of leaving the tray icon stuck on the last known level.
+            if (_batteryFeature.IsOfflineEvent(message))
+            {
+                HandleOfflineEvent();
+                return true; // Offline event handled
+            }
+
+            DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to parse battery event");
+            return false;
+        }
+
+        var batStatus = batteryUpdate.Value;
+
+        // Check if we're in the delay window after device ON (ignore EVENT data during this period)
+        if (_batteryEventDelayAfterOn > 0 && _deviceOnTime != DateTimeOffset.MinValue)
+        {
+            var timeSinceDeviceOn = (now - _deviceOnTime).TotalSeconds;
+            if (timeSinceDeviceOn < GlobalSettings.settings.BatteryEventDelayAfterOn)
+            {
+                DiagnosticLogger.Log($"[{DeviceName}] Battery event ignored (device ON +{timeSinceDeviceOn:F1}s, " +
+                                   $"delay window {_batteryEventDelayAfterOn}s): {batStatus.batteryPercentage}%");
+
+                // Event data suppressed - don't update lastUpdate or cancel polling
+                // Let polling continue during delay window for device stability
+                return true; // Event handled but data suppressed
+            }
+        }
+
+        // Normal event processing continues
+        lastUpdate = now;
+
+        DiagnosticLogger.Log($"[{DeviceName}] Battery event received: MVolt: {batStatus.batteryMVolt}, Percent: {batStatus.batteryPercentage}");
+        
+        // Check if we should stop polling when events arrive
+        if (!_keepPoolingWithEvents && !_poolingCts.IsCancellationRequested)
+        {            
+            DiagnosticLogger.Log($"[{DeviceName}] Battery event received, stopping polling (keepPollingWithEvents=false)");            
+            _poolingCts.Cancel();
+        }
+        else if (_keepPoolingWithEvents)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Battery event received, polling continues (keepPollingWithEvents=true)");
+        }
+
+        
+        // Publish update (handles deduplication, IPC, logging)
+        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "event");
+
+        return true; // Event handled successfully
+    }
+
+    /// <summary>
+    /// Mark this device offline in response to a battery feature event that signals inactivity
+    /// (e.g. 0x1F20 with the valid bit cleared). Mirrors the receiver OFF (0x41) path: flip
+    /// IsOnline, stop polling, and notify the UI via an offline UpdateMessage (battery = -1).
+    /// </summary>
+    private void HandleOfflineEvent()
+    {
+        DiagnosticLogger.Log($"[{DeviceName}] Battery feature reported device inactive - marking offline");
+
+        IsOnline = false;
+        CancelPooling();
+
+        HidppManagerContext.Instance.SignalDeviceEvent(
+            IPCMessageType.UPDATE,
+            new UpdateMessage(
+                deviceId: Identifier,
+                batteryPercentage: -1,            // Convention: -1 = offline/unknown
+                powerSupplyStatus: PowerSupplyStatus.UNKNOWN,
+                batteryMVolt: 0,
+                updateTime: DateTimeOffset.Now,
+                mileage: -1,
+                isWiredMode: false
+            )
+        );
+    }
+
+    #region STOP
+    /// <summary>
+    /// Stops this device instance: cancels polling and any in-flight initialization and waits
+    /// (bounded) for them to exit. Idempotent. Called by DeviceLifecycleManager when the instance
+    /// is replaced or its receiver is removed.
+    /// The CTS/semaphore are deliberately never disposed: they hold no unmanaged resources, and
+    /// disposing them under a running init/poll caused ObjectDisposedException races.
+    /// </summary>
+    public async Task StopAsync()
+    {
+        if (Interlocked.Increment(ref _stopCount) != 1)
+        {
+            return;
+        }
+
+        DiagnosticLogger.Log($"[{DeviceName}] HidppDevice stopping");
+
+        // Cancels battery polling and any in-flight InitAsync request/backoff
+        _cancellationSource.Cancel();
+
+        if (_pollingTask != null)
+        {
+            try
+            {
+                await _pollingTask.WaitAsync(StopTimeout);
+                DiagnosticLogger.Log($"[{DeviceName}] Battery polling task exited successfully");
+            }
+            catch (TimeoutException)
+            {
+                DiagnosticLogger.LogWarning($"[{DeviceName}] Battery polling task did not exit within {StopTimeout.TotalSeconds}s timeout");
+            }
+            catch (OperationCanceledException)
+            {
+                // Task was cancelled before it started running
+                DiagnosticLogger.Log($"[{DeviceName}] Battery polling task exited successfully");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLogger.LogWarning($"[{DeviceName}] Error waiting for polling task: {ex.Message}");
+            }
+        }
+
+        // Wait for an in-flight InitAsync (cancelled above) to unwind, then hand the semaphore back
+        if (await _initSemaphore.WaitAsync(StopTimeout))
+        {
+            _initSemaphore.Release();
+        }
+        else
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] Initialization did not exit within {StopTimeout.TotalSeconds}s timeout");
+        }
+
+        DiagnosticLogger.Log($"[{DeviceName}] HidppDevice stopped");
+    }
+    #endregion
+}
