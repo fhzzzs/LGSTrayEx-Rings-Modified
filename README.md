@@ -83,7 +83,7 @@ Automatic device merging is enabled by default. Confirmed hardware identifiers t
 
 Rings.9 includes a bundled native provider, `NativeLayout.dll`, intended to reserve space after the Start button when Left is selected. It uses Windows XAML Diagnostics, not Windhawk. Internal Explorer layouts can change between Windows releases.
 
-The provider uses a heartbeat-based reservation lease, attempts to restore modified layout properties, and checks actual screen geometry before showing rings. Incompatible layouts fall back to a safe right-side gap or hide the strip when no safe space exists.
+The provider uses a heartbeat-based reservation lease, attempts to restore modified layout properties, and checks actual screen geometry before showing rings. Incompatible layouts first try a verified left-side gap, then a safe right-side gap, or hide the strip when no safe space exists. Left-side fallback does not move Start or reserve native space. The settings page reports the actual placement.
 
 The initial target is a single-monitor Windows 11 x64 system with a horizontal primary taskbar. Centered mode, DPI, crowded taskbars, Explorer recovery and native placement still require live testing. Test in a disposable VM before using the experimental feature on your main desktop.
 

@@ -62,12 +62,36 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
            !nonStart.Any(b=>b.right>leading&&b.left<anchor) && reserve.total>0 &&
            TryReserved(anchor,end,width,(int)Math.Round(reserve.before*scale),(int)Math.Round(reserve.after*scale),occupied,out int nativeX)){
             NativeTaskbarSlot.Instance.Verify(true);
+            NativeTaskbarSlot.Instance.ReportPlacement("实际位置：开始按钮右侧 · 已核验空位");
             placement=new(nativeX,y,width,height,scale);return true;
         }
-        // Never present an unrelated centered gap as a left reservation. Safe fallback is the right slot.
-        if(c.Left)NativeTaskbarSlot.Instance.Verify(false);
-        if(!TryGap(start,end,width,leftGap,rightGap,offset,false,occupied,out int x))return false;
+        // Prefer a real, independently verified left-edge gap even when the native
+        // reservation is unavailable. Never claim the Start button has been moved.
+        if(c.Left){
+            NativeTaskbarSlot.Instance.Verify(false);
+            if(startButtonLeft is int sl && startButtonRight is int sr &&
+               TryLeftFallback(Math.Max(bounds.Left,info.Monitor.Left),end,sl,sr,(int)Math.Ceiling(24*scale),width,leftGap,rightGap,offset,occupied,out int lx)){
+                NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左侧安全空位（非原生占位）");
+                placement=new(lx,y,width,height,scale);return true;
+            }
+        }
+        if(!TryGap(start,end,width,leftGap,rightGap,offset,false,occupied,out int x)){
+            if(c.Left)NativeTaskbarSlot.Instance.ReportPlacement("实际位置：无安全空位，暂时隐藏");
+            return false;
+        }
+        if(c.Left)NativeTaskbarSlot.Instance.ReportPlacement("实际位置：右侧回退（左侧空间不足）");
         placement=new(x,y,width,height,scale);return true;
+    }
+    internal static bool TryLeftFallback(int edge,int end,int startLeft,int startRight,int edgeTolerance,int width,int leftGap,int rightGap,int offset,IEnumerable<(int left,int right)> occupied,out int x){
+        x=0;
+        if(startLeft<edge||startRight<=startLeft||startRight>end)return false;
+        var intervals=occupied.ToArray();
+        // Centered Start: use the leading free space, never overlap the centered buttons.
+        if(startLeft>edge+edgeTolerance)
+            return TryGap(edge,startLeft,width,leftGap,rightGap,offset,true,intervals,out x);
+        // Left-aligned Start: only use the adjacent free slot, not a remote right-hand gap.
+        int next=intervals.Where(i=>i.right>startRight).Select(i=>Math.Max(startRight,i.left)).DefaultIfEmpty(end).Min();
+        return TryGap(startRight,Math.Min(end,next),width,leftGap,rightGap,offset,true,intervals,out x);
     }
     internal static bool TryReserved(int anchor,int end,int width,int before,int after,IEnumerable<(int left,int right)> occupied,out int x){
         x=0;if(width<=0||before<0||after<0)return false;

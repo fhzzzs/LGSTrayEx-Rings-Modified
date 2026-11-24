@@ -24,6 +24,8 @@ internal sealed class NativeTaskbarSlot : IDisposable
     private uint _attemptedPid;
     private bool _disposed;
     internal string Status { get; private set; } = "等待设备连接";
+    internal string PlacementStatus { get; private set; } = "";
+    internal void ReportPlacement(string value)=>PlacementStatus=value;
     internal bool Acknowledged { get; private set; }
 
     // Restrict the first experimental revision to known horizontal Windows 11 x64 builds.
@@ -33,6 +35,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
     internal void Update(double logicalWidth)
     {
         if (_disposed) return;
+        PlacementStatus="";
         var c=RingConfig.Current;
         int wanted=c.Left?TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X).total:0;
         if(wanted==0){ Release();_blockedWidth=0;_lastWanted=0;Status=c.Left?"等待设备连接 · 已释放占位":"靠右 · 原生左侧占位已释放";return; }
@@ -67,7 +70,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
                 _attach=Task.Run(()=>Attach(pid,dll));
             }
             if(_attach?.IsCompletedSuccessfully==true&&_attach.Result<0){Status=$"原生接口连接失败 (0x{_attach.Result:X8}) · 安全定位";return;}
-            if(now-_requestedAt>12000){Status="原生接口未返回任务栏控件 · 安全定位";return;}
+            if(now-_requestedAt>12000){Status=$"原生接口未返回任务栏控件（Windows build {Environment.OSVersion.Version.Build}） · 安全定位";return;}
             Status="正在连接内置原生布局模块";
         }catch(Exception ex){Release();Status="原生布局不可用 · 安全定位";DiagnosticLogger.LogWarning("NativeLayout: "+ex.Message);}
     }
