@@ -46,6 +46,23 @@ public class ControllerAliasMatcherTests
         DeviceIdentityManager.Split(c,group);center.Regroup(c);Assert.Equal(2,center.Advance(c,T).Rows.Length);
         Assert.Equal(2,DeviceIdentityManager.Group([Gip(),Slot()],new(){AutoDeduplicate=false}).Length);
     }
+    [Fact]public void GenericGipAndUnknownXInputSlotCanBeProvisionallyLinked(){
+        var g=Gip() with{Name="HID-compliant game controller",Level=10};
+        var x=Slot() with{ShortLabel="—"};
+        var c=new RingPreferences();var center=new PhysicalDeviceCenter(T);
+        center.RefreshInventory([g,x],c);
+        var snap=center.Advance(c,T);
+        Assert.Equal(10,Assert.Single(snap.Rows).Level);
+        Assert.Equal(2,Assert.Single(snap.Groups).Sources.Length);
+        Assert.False(c.PhysicalSourceIds.ContainsKey(x.Key));
+        Assert.Equal(3,DeviceIdentityManager.Group([g,Gip("gip:b"),x],new()).Length);
+    }
+    [Fact]public void ConflictingBluetoothBatteryIsNotGuessedAsSamePhysicalController(){
+        var g=Gip() with{Name="HID-compliant game controller",Level=10};
+        var x=Slot() with{ShortLabel="—"};
+        var ble=new TaskbarBattery(DeviceType.Gamepad,"Xbox Wireless Controller",50,"已连接",false,T,"ble:xbox",PhysicalId:"ble-address:123456789ABC");
+        Assert.Equal(2,DeviceIdentityManager.Group([g,x,ble],new()).Length);
+    }
     [Fact]public void DifferentModelOrWirelessBandDoesNotTriggerUsbHeuristic(){
         Assert.Equal(2,DeviceIdentityManager.Group([Gip() with{Name="Other Controller"},Slot()],new()).Length);
         Assert.Equal(2,DeviceIdentityManager.Group([Gip(),Slot() with{ShortLabel="Med"}],new()).Length);

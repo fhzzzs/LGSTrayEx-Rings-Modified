@@ -34,6 +34,7 @@ internal static class RingDiagnostics
         b.AppendLine();b.AppendLine("Providers:");
         foreach(var p in providers.Values.OrderBy(x=>x.Id))
             b.AppendLine($"  {p.Id}: {(p.Enabled?(p.Busy?"scanning":"idle"):"disabled")} · {p.Count} sources · last {p.LastMs:F0} ms · failures {p.Failures}"+(p.Error==null?"":" · "+p.Error));
+        b.AppendLine("  ASUS OMNI: "+AsusBatteryReader.Diagnostics);
         b.AppendLine();b.AppendLine("Logical devices:");
         foreach(var g in groups){
             var r=g.Reading;

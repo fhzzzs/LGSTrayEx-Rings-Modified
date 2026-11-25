@@ -13,6 +13,9 @@ internal static class ControllerAliasMatcher
     internal static bool IsGip(TaskbarBattery d)=>d.Type==DeviceType.Gamepad&&d.Key.StartsWith("gip:",StringComparison.Ordinal);
     internal static bool IsXInput(TaskbarBattery d)=>d.Type==DeviceType.Gamepad&&d.Key.StartsWith("xinput:",StringComparison.Ordinal);
     private static bool Xbox360(TaskbarBattery d)=>IsGip(d)&&string.Equals(d.Name.Trim(),"Xbox 360 Controller for Windows",StringComparison.OrdinalIgnoreCase);
+    private static bool GenericXbox(TaskbarBattery d)=>IsGip(d)&&(string.Equals(d.Name.Trim(),"HID-compliant game controller",StringComparison.OrdinalIgnoreCase)||string.Equals(d.Name.Trim(),"Xbox Wireless Controller",StringComparison.OrdinalIgnoreCase));
+    private static bool SupportedPair(TaskbarBattery g,TaskbarBattery x)=>Xbox360(g)&&(x.ShortLabel=="USB"||x.ShortLabel=="—")||GenericXbox(g)&&(x.ShortLabel=="USB"||x.ShortLabel=="—");
+
     internal static void Apply(TaskbarBattery[] raw,RingPreferences c,Dictionary<string,string> roots,HashSet<string> inferred)
     {
         if(!c.AutoDeduplicate)return;
@@ -21,7 +24,7 @@ internal static class ControllerAliasMatcher
         var activeGip=gip.Where(d=>d.IsConnected).ToArray();
         var activeSlots=slots.Where(d=>d.IsConnected).ToArray();
         bool CanPair(TaskbarBattery g,TaskbarBattery x)
-            =>Xbox360(g)&&!c.SeparateDeviceSources.Contains(g.Key)&&!c.SeparateDeviceSources.Contains(x.Key)
+            =>(Xbox360(g)||GenericXbox(g))&&!c.SeparateDeviceSources.Contains(g.Key)&&!c.SeparateDeviceSources.Contains(x.Key)
                 &&roots[g.Key]==g.Key&&roots[x.Key]==x.Key
                 &&!c.DeviceAliases.ContainsKey(g.Key)&&!c.DeviceAliases.ContainsKey(x.Key)
                 &&!roots.Any(p=>p.Key!=x.Key&&p.Value==x.Key)
@@ -33,7 +36,7 @@ internal static class ControllerAliasMatcher
         }
         if(activeGip.Length==1&&activeSlots.Length==1){
             var g=activeGip[0];var x=activeSlots[0];
-            if(x.ShortLabel=="USB"&&g.Level is >=0 and <=100&&CanPair(g,x)){
+            if(SupportedPair(g,x)&&g.Level is >=0 and <=100&&CanPair(g,x)){
                 Pair(g,x);
                 // Only used to keep an inactive historical placeholder attached.
                 // A live slot must always be checked anew.
