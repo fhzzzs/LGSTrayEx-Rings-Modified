@@ -26,6 +26,8 @@ public sealed class BatteryRing : FrameworkElement
     private Pen? cachedGlow;
     private double arcLevel=-1;
     private Geometry? cachedArc;
+    private (Color Color,double Width)? connectionPenKey;
+    private Pen? connectionPen;
     private Color? backgroundKey;
     private Brush? cachedBackground;
     private readonly object shineKey=new();
@@ -70,11 +72,11 @@ public sealed class BatteryRing : FrameworkElement
         double w=Math.Clamp(c.RingWidth,1,7),rad=28;var center=new Point(32,32);bool light=PreviewLight??RingPreferences.SystemLight();var tk=(RingPreferences.Ink(c.Foreground(d.Key,"Track",light)),Math.Clamp(c.TrackOpacity/100,0,1),w);if(cachedTrack==null||trackKey!=tk){var track=new SolidColorBrush(tk.Item1){Opacity=tk.Item2};cachedTrack=new Pen(track,w);cachedTrack.Freeze();trackKey=tk;}dc.DrawEllipse(null,cachedTrack,center,rad,rad);
         var hi=Mix(Ink,Color.FromArgb(Ink.A,255,255,255),Math.Clamp(c.Gradient/100,0,1)*(1-Gray));var lo=Mix(Ink,Color.FromArgb(Ink.A,0,0,0),Math.Clamp(c.Gradient/400,0,.5)*(1-Gray));
         var cap=c.Rounded?PenLineCap.Round:PenLineCap.Flat;var gk=(hi,Ink,lo,w,cap);if(cachedGradient==null||gradientKey!=gk){var brush=new LinearGradientBrush(new GradientStopCollection{new(hi,0),new(Ink,.65),new(lo,1)},new Point(0,0),new Point(1,1));cachedGradient=new Pen(brush,w){StartLineCap=cap,EndLineCap=cap};cachedGradient.Freeze();gradientKey=gk;}var pen=cachedGradient;double level=Math.Clamp(Level,0,100);
-        if(level>=99.999)dc.DrawEllipse(null,pen,center,rad,rad);else if(level>0.001){if(cachedArc==null||arcLevel!=level){var geo=Arc(0,level*3.6,rad);geo.Freeze();cachedArc=geo;arcLevel=level;}dc.DrawGeometry(null,pen,cachedArc);}
+        if(d.ConnectionOnly||(!d.Offline&&(d.Stale||d.Connection!=ConnectionState.Connected||d.Level==null&&d.Quality==ReadingQuality.Unknown))){var ck=(Ink,w*.8);if(connectionPen==null||connectionPenKey!=ck){connectionPen=new Pen(new SolidColorBrush(ck.Item1),ck.Item2){DashStyle=new DashStyle(new double[]{1.6,2.2},0),DashCap=PenLineCap.Round};connectionPen.Freeze();connectionPenKey=ck;}dc.DrawEllipse(null,connectionPen,center,rad,rad);}else if(level>=99.999)dc.DrawEllipse(null,pen,center,rad,rad);else if(level>0.001){if(cachedArc==null||arcLevel!=level){var geo=Arc(0,level*3.6,rad);geo.Freeze();cachedArc=geo;arcLevel=level;}dc.DrawGeometry(null,pen,cachedArc);}
         if(shinePeriod>0&&d.Charging&&!d.Offline&&level>0&&level<100){var (start,end)=ShineSegment((double)GetValue(ShinePhaseProperty),level,c.ChargeLength);if(end-start>.01){var g=(RingPreferences.Ink(c.DeviceInk(d.Key,"ChargeHighlight",c.ChargeHighlight)),Math.Clamp(c.ChargeBrightness/100,0,1),w*.85);if(cachedGlow==null||glowKey!=g){var glow=new SolidColorBrush(g.Item1){Opacity=g.Item2};cachedGlow=new Pen(glow,g.Item3){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};cachedGlow.Freeze();glowKey=g;}dc.DrawGeometry(null,cachedGlow,Arc(start,end,rad));}}
         var muted=RingPreferences.Ink(c.DeviceInk(d.Key,"Offline",c.Offline));var icon=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Icon",light)),muted,Gray));var text=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Text",light)),muted,Gray));var ok=(icon.Color,Math.Clamp(c.IconStroke,.5,4));if(cachedOutline==null||outlineKey!=ok){cachedOutline=new Pen(icon,ok.Item2){LineJoin=PenLineJoin.Round,StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};cachedOutline.Freeze();outlineKey=ok;}var outline=cachedOutline;
         dc.PushTransform(new TranslateTransform(c.IconX,c.IconY));dc.PushTransform(new ScaleTransform(c.IconScale/100,c.IconScale/100,32,21.5));dc.DrawGeometry(null,outline,Glyphs[Math.Clamp(TaskbarBattery.Rank(d.Type),0,3)]);dc.Pop();dc.Pop();
-        string label=!d.Offline&&d.ShortLabel==null&&d.Level is >=0 and <=100?$"{Math.Round(level)}%":d.Percent;
+        string label=!d.Offline&&!d.Stale&&d.IsConnected&&d.ShortLabel==null&&d.Level is >=0 and <=100?$"{Math.Round(level)}%":d.RingLabel;
         var key=(label,c.Font,c.Bold,Math.Clamp(c.FontSize,8,20),text.Color,VisualTreeHelper.GetDpi(this).PixelsPerDip);
         if(cachedText==null||textKey!=key){text.Freeze();cachedText=new FormattedText(label,CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily(c.Font),FontStyles.Normal,c.Bold?FontWeights.SemiBold:FontWeights.Normal,FontStretches.Normal),key.Item4,text,key.Item6);textKey=key;}
         var ft=cachedText!;dc.DrawText(ft,new Point(32-ft.Width/2+c.TextX,c.TextY-ft.Baseline));

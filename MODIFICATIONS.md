@@ -60,3 +60,6 @@ GameSir G7 edition IDs and safe WGI fallback, Cyclone 2 live report parser and o
 Keep the obsolete UseAsus field ignored; the current explicit provider switch uses AsusHidEnabled, defaults on, and is independently persisted. Preserve the original regression test and add a round-trip test for the new field. Version remains 1.0.5; use the GitHub Actions run number to distinguish test packages. No formal release or hardware certification.
 
 Version policy: continue from 1.0.4 to 1.0.5, keep compatibility and performance fixes on the same development version, distinguish intermediate packages by Actions run ID, and reserve minor/major increments for substantial validated changes. Earlier 2.0.x identifiers were experimental CI labels, not releases. No functionality was reverted.
+
+## v1.0.5 — live UI and GameSir runtime feedback
+Withdraw active Cyclone 2 queries; separate experimental passive reader; dual WGI diagnostics and legacy Gamepad preference; ON/N/A/reconnecting presentation; live device status/source updates and full-row advanced/source toggles; earlier UIA refresh and coalesced invalidations. Version unchanged.

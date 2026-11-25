@@ -25,20 +25,26 @@ internal static class GipBatteryReader
             var key="gip:"+id;ushort vid=raw.HardwareVendorId,pid=raw.HardwareProductId;
             string name=ControllerIdentity.Name(vid,pid,raw.DisplayName);
             try{
-                // G7 Pro uses the raw Windows Gaming Input battery report.
-                // No vendor writes, driver replacement or mode changes.
-                BatteryReport? report=null;string route="raw";
-                if(ControllerIdentity.RawControllerAllowed(vid,pid)||gamepad==null){
-                    try{report=raw.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} raw error {ex.GetType().Name}");}
-                }
+                // Keep the original Gamepad API available even when the newer Raw API
+                // returns a value. Raw and Gamepad are observations of the same controller.
+                BatteryReport? standard=null,rawReport=null;
+                if(gamepad!=null)try{standard=gamepad.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} gamepad error {ex.GetType().Name}");}
+                bool triedRaw=ControllerIdentity.RawControllerAllowed(vid,pid)||gamepad==null||standard==null||standard.Status==BatteryStatus.NotPresent;
+                if(triedRaw)
+                    try{rawReport=raw.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} raw error {ex.GetType().Name}");}
                 int? Level(BatteryReport? r)=>r==null||r.Status==BatteryStatus.NotPresent?null:ReportPercent(r.FullChargeCapacityInMilliwattHours,r.RemainingCapacityInMilliwattHours,r.ChargeRateInMilliwatts);
-                int? level=Level(report);
-                if(!level.HasValue&&gamepad!=null){
-                    try{var fallback=gamepad.TryGetBatteryReport();if(report==null||Level(fallback).HasValue){report=fallback;level=Level(report);route="gamepad";}}
-                    catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} gamepad error {ex.GetType().Name}");}
+                if(!triedRaw&&!Level(standard).HasValue)
+                    try{rawReport=raw.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} raw fallback error {ex.GetType().Name}");}
+                void Describe(string route,BatteryReport? r){
+                    if(r==null)return;
+                    notes.Add($"{vid:X4}:{pid:X4} {route}: {r.RemainingCapacityInMilliwattHours}/{r.FullChargeCapacityInMilliwattHours} mWh; rate={r.ChargeRateInMilliwatts} mW; {r.Status}; level={Level(r)?.ToString()??"unknown"}");
                 }
+                Describe("gamepad",standard);Describe("raw",rawReport);
+                // Prefer the known older API if it has usable data, then raw.
+                var report=Level(standard).HasValue?standard:Level(rawReport).HasValue?rawReport:standard??rawReport;
+                int? level=Level(report);
                 var status=report?.Status==BatteryStatus.Idle&&level==100?"已充满":level.HasValue?"已连接（GIP）":"已连接（GIP 电量不可用）";
-                notes.Add($"{vid:X4}:{pid:X4} {route}: {report?.RemainingCapacityInMilliwattHours}/{report?.FullChargeCapacityInMilliwattHours} mWh; rate={report?.ChargeRateInMilliwatts} mW; {report?.Status}; level={level?.ToString()??"unknown"}");
+                if(report==null)notes.Add($"{vid:X4}:{pid:X4} no battery report from either API");
                 rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,level,status,report?.Status==BatteryStatus.Charging,level.HasValue?DateTimeOffset.UtcNow:DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});
             }catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} {ex.GetType().Name}");rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,null,"已连接（GIP 电量不可用）",false,DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});}
         }
@@ -52,7 +58,10 @@ internal static class GipBatteryReader
             foreach(var raw in RawGameController.RawGameControllers)
                 if(ControllerIdentity.RawControllerAllowed(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null);
         }catch(Exception ex){DiagnosticLogger.LogWarning("GIP: "+ex.Message);throw;}
-        finally{System.Threading.Volatile.Write(ref diagnostics,notes.Count==0?"No active controllers":string.Join("; ",notes));}
+        finally{
+            var summary=notes.Count==0?"No active controllers":string.Join("; ",notes);
+            if(System.Threading.Interlocked.Exchange(ref diagnostics,summary)!=summary)DiagnosticLogger.Log("WGI battery reports: "+summary);
+        }
         return rows;
     }
 }

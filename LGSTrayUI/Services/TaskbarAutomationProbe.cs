@@ -30,17 +30,19 @@ internal static class TaskbarAutomationProbe
         controls=[];
         long now=Environment.TickCount64;long currentGeneration=Volatile.Read(ref generation);
         if(pending?.IsCompleted==true){
+            bool superseded=pending.IsCompletedSuccessfully&&pending.Result is { } oldCapture&&oldCapture.Generation!=currentGeneration;
             if(pending.IsCompletedSuccessfully&&pending.Result is { } captured&&captured.Controls.Length>0&&captured.Generation==currentGeneration&&Fresh(now,captured.Started,captured.Completed)){
                 last=captured;failures=0;retryAfter=0;
             }else{
-                last=null;Interlocked.Increment(ref rejected);failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);
+                // A layout invalidation is not a provider failure; retry promptly.
+                Interlocked.Increment(ref rejected);if(superseded){failures=0;retryAfter=0;}else{failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);}
             }
             pending=null;
         }
         bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
         // Keep the existing 1.5s safety freshness limit. Back off on failed
         // UIA captures rather than continuously rebuilding cross-process trees.
-        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=900))
+        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=650))
             pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         if(!matching||last!.Controls.Length==0)return false;
         Interlocked.Increment(ref cacheHits);controls=last.Controls;return true;

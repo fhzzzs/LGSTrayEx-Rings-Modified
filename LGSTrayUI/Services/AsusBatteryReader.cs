@@ -143,12 +143,6 @@ internal static class AsusBatteryReader
         int level=mv>=4100?100:mv>=3800?75:mv>=3700?50:mv>=3500?25:10;
         return(level,charging);
     }
-    private static bool HasOutputLength(string path,int length){
-        using var handle=CreateFile(path,0,3,0,3,0,0);
-        if(handle.IsInvalid||!HidD_GetPreparsedData(handle,out var data))return false;
-        try{return HidP_GetCaps(data,out var caps)==0x00110000&&caps.OutputLength==length;}
-        finally{HidD_FreePreparsedData(data);}
-    }
     private static bool HasFeatureChannel(string path){
         using var handle=CreateFile(path,0,3,0,3,0,0);
         if(handle.IsInvalid||!HidD_GetPreparsedData(handle,out var data))return false;
@@ -218,9 +212,9 @@ internal static class AsusBatteryReader
         }finally{if(head!=0)hid_free_enumeration(head);}
         return rows;
     }
-    internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirQuery=false){
+    internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirOnly=false){
         var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);
-        foreach(ushort vid in new ushort[]{0x054C,0x057E,0x2DC8,0x3537}){
+        foreach(ushort vid in gameSirOnly?new ushort[]{0x3537}:new ushort[]{0x054C,0x057E,0x2DC8}){
             var head=hid_enumerate(vid,0);
             try{
                 for(var p=head;p!=0;){
@@ -235,8 +229,7 @@ internal static class AsusBatteryReader
                         string key=$"controller-hid:{d.Vid:X4}:{d.Pid:X4}:{identity}";
                         if(seen.Contains(key))continue;
                         byte[] buffer=new byte[128];
-                        // Explicit opt-in; exact documented Cyclone 2 report only.
-                        if(d.Vid==0x3537&&gameSirQuery&&HasOutputLength(path,64)){var query=new byte[64];query[0]=0x0F;query[1]=0xF2;token.ThrowIfCancellationRequested();if(hid_write(h,query,(nuint)query.Length)<0)continue;}
+                        // Passive only: never write a GameSir heartbeat or configuration report.
                         for(int i=0;i<3;i++){
                             token.ThrowIfCancellationRequested();
                             int n=hid_read_timeout(h,buffer,(nuint)buffer.Length,120);

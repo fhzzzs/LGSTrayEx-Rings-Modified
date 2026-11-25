@@ -43,7 +43,7 @@ internal sealed class ProviderScheduler:IDisposable
     private readonly Action changed;
     private bool disposed,suspended;
     private readonly long created=Environment.TickCount64;
-    internal static int InitialDelayMs(string id)=>id switch{"asus"=>750,"astro"=>1500,"controller-hid"=>2250,"ble"=>500,_=>0};
+    internal static int InitialDelayMs(string id)=>id switch{"asus"=>750,"astro"=>1500,"controller-hid"=>2250,"gamesir-hid"=>3000,"ble"=>500,_=>0};
     internal static TimeSpan NextDelay(TimeSpan period,int failures,bool online)
     {
         double seconds=Math.Clamp(period.TotalSeconds,.25,120);
@@ -82,7 +82,7 @@ internal sealed class ProviderScheduler:IDisposable
         timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,2000));
     }
     internal static TimeSpan AdaptiveInterval(string id,TimeSpan period,int stablePolls)
-        => (id is "ble" or "asus" or "astro" or "controller-hid")&&stablePolls>=3?TimeSpan.FromSeconds(Math.Min(id=="controller-hid"?15:120,period.TotalSeconds*2)):period;
+        => (id is "ble" or "asus" or "astro" or "controller-hid" or "gamesir-hid")&&stablePolls>=3?TimeSpan.FromSeconds(Math.Min(id is "controller-hid" or "gamesir-hid"?15:120,period.TotalSeconds*2)):period;
     internal static bool SameReadings(IReadOnlyList<TaskbarBattery> a,IReadOnlyList<TaskbarBattery> b){
         if(a.Count!=b.Count)return false;
         for(int i=0;i<a.Count;i++)if(!TaskbarBattery.SamePresentation(a[i],b[i]))return false;

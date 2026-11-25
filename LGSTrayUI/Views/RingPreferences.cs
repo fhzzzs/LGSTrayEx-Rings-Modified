@@ -59,11 +59,12 @@ internal sealed class RingPreferences
     internal AlertAudio Audio(string key,int threshold)=>AlertSounds.TryGetValue(key,out var own)&&own.TryGetValue(threshold,out var a)?a:AlertSounds.TryGetValue("",out var global)&&global.TryGetValue(threshold,out var b)?b:new AlertAudio{Sound=threshold<=5?"Alert":threshold<=10?"Bell":"Soft Ding"};
     public double PollSeconds {get;set;}=2; public double BleSeconds {get;set;}=15; public bool UseGip {get;set;}=true; public bool UseXInput {get;set;}=true; public bool UseBle {get;set;}=true;
     public bool AsusHidEnabled {get;set;}=true; public bool UseAstro {get;set;}=true; public bool UseControllerHid {get;set;}=true;
-    public bool GameSirCycloneQuery {get;set;}=false;
+    // Legacy active-query setting deliberately ignored: it can interfere with controller software.
+    public bool GameSirPassiveEnabled {get;set;}=false;
     public bool Hover {get;set;}=true;
     internal double Ms(double n)=>Animate?Math.Clamp(n,0,10000)/Math.Clamp(Speed,.5,2):0;
     internal static Color Ink(string s, string fallback="#FFFFFF") {try{return (Color)ColorConverter.ConvertFromString(s);}catch{return (Color)ColorConverter.ConvertFromString(fallback);}}
-    internal Color Accent(TaskbarBattery d){string band=d.Offline?"Offline":d.Charging?"Charging":d.Level is not int n?"Offline":n<CriticalAt?"Critical":n<LowAt?"Low":"Normal";string fallback=band switch{"Offline"=>Offline,"Charging"=>Charging,"Critical"=>Critical,"Low"=>Low,_=>Normal};if(band is not ("Offline" or "Charging") && DeviceColors.TryGetValue(d.Key,out var legacy))fallback=legacy;return Ink(DeviceInk(d.Key,band,fallback));}
+    internal Color Accent(TaskbarBattery d){string band=d.Offline?"Offline":d.Charging?"Charging":d.Level is not int n?(d.ConnectionOnly?"Normal":"Offline"):n<CriticalAt?"Critical":n<LowAt?"Low":"Normal";string fallback=band switch{"Offline"=>Offline,"Charging"=>Charging,"Critical"=>Critical,"Low"=>Low,_=>Normal};if(band is not ("Offline" or "Charging") && DeviceColors.TryGetValue(d.Key,out var legacy))fallback=legacy;return Ink(DeviceInk(d.Key,band,fallback));}
 }
 public sealed class AlertAudio {public string Sound {get;set;}="Soft Ding";public double Volume {get;set;}=65;}
 internal static class RingConfig

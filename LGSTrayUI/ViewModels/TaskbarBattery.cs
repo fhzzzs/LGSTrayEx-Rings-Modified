@@ -57,6 +57,9 @@ internal sealed record TaskbarBattery
     // Timestamp-only refreshes must not rebuild UI or allocate record clones.
     internal static bool SamePresentation(TaskbarBattery a,TaskbarBattery b)=>a.Key==b.Key&&a.Type==b.Type&&a.Name==b.Name&&a.Level==b.Level&&a.Connection==b.Connection&&a.ChargeState==b.ChargeState&&a.Charging==b.Charging&&a.Status==b.Status&&a.ShortLabel==b.ShortLabel&&a.PhysicalId==b.PhysicalId&&a.HardwareVendorId==b.HardwareVendorId&&a.HardwareProductId==b.HardwareProductId&&a.Estimated==b.Estimated&&a.Stale==b.Stale&&a.LastKnownLevel==b.LastKnownLevel;
     public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value && value is >=0 and <=100 ? $"{value}%" : "—");
+    public bool ConnectionOnly=>IsConnected&&!Stale&&Quality==ReadingQuality.Unknown&&!Charging;
+    public string RingLabel=>Offline?"Off":Connection is ConnectionState.Reconnecting or ConnectionState.Connecting?"…":Stale?"N/A":ConnectionOnly?"ON":Quality==ReadingQuality.Unknown&&Charging?"N/A":Percent;
+    public string DisplayStatus=>Status+" · "+RingLabel;
     public int BarValue => Level is >=0 and <=100 ? Level.Value : 0;
     public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";
     public string UpdatedLabel => Stale&&LastKnownLevel is int last ? $"历史电量 {last}% · {Updated.ToLocalTime():HH:mm}" : Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";

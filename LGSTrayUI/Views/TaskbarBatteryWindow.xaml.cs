@@ -145,14 +145,15 @@ public partial class TaskbarBatteryWindow : Window
         var c=RingConfig.Current;
         bool changed=force||!SamePresentation(_rows,snapshot.Rows);
         bool timestampChanged=!_rows.SequenceEqual(snapshot.Rows);
-        bool groupingChanged=_settings!=null&&!SameGrouping(_groups,snapshot.Groups);
+        // Settings owns incremental source/status refresh.
         _groups=snapshot.Groups;_rows=snapshot.Rows;RingDiagnostics.Observe(_groups);
         if(changed){
             _animator.Update(_rows);
             foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);
         }
         if(!changed&&timestampChanged)_animator.RefreshTimestamps(_rows);
-        if(changed||groupingChanged||timestampChanged)_settings?.UpdateDevices(_rows,_groups);
+        // The page also needs non-selected source changes, even when the ring is unchanged.
+        _settings?.UpdateDevices(_rows,_groups);
         _notifications.Observe(snapshot,DateTimeOffset.UtcNow);
     }
 
@@ -163,7 +164,7 @@ public partial class TaskbarBatteryWindow : Window
     {
         if(_closed||_suspended)return;
         // Placement no longer drives provider scans or the device state clock.
-        _positionTimer.Interval=TimeSpan.FromMilliseconds(_animator.Width<=0?2000:_placementReady?1000:250);
+        _positionTimer.Interval=TimeSpan.FromMilliseconds(_animator.Width<=0?2000:_placementReady?350:250);
         if (_openMenu?.IsOpen == true) {
             return;
         }

@@ -12,7 +12,7 @@ internal sealed class TaskbarEventMonitor:IDisposable
     private readonly Action changed;
     private readonly WinEvent callback;
     private readonly nint location,foreground;
-    private bool disposed,queued;
+    private bool disposed,queued,layoutChanged;
     internal TaskbarEventMonitor(Dispatcher dispatcher,Action changed)
     {
         this.dispatcher=dispatcher;this.changed=changed;callback=OnEvent;
@@ -26,9 +26,10 @@ internal sealed class TaskbarEventMonitor:IDisposable
             var bar=FindWindow("Shell_TrayWnd",null);
             if(bar==0||GetAncestor(hwnd,2)!=bar&&hwnd!=bar)return;
         }
-        if(evt!=3)TaskbarAutomationProbe.Invalidate();
+        // Coalesce a shell event burst before invalidating the UIA snapshot.
+        if(evt!=3)layoutChanged=true;
         if(queued)return;queued=true;
-        dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{queued=false;if(!disposed)changed();}));
+        dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{queued=false;if(disposed)return;if(layoutChanged){layoutChanged=false;TaskbarAutomationProbe.Invalidate();}changed();}));
     }
     public void Dispose(){if(disposed)return;disposed=true;if(location!=0)UnhookWinEvent(location);if(foreground!=0)UnhookWinEvent(foreground);}
     private delegate void WinEvent(nint hook,uint evt,nint hwnd,int obj,int child,uint thread,uint time);
