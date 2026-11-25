@@ -27,7 +27,7 @@ public partial class TaskbarBatteryWindow : Window
     private readonly uint _taskbarCreated=RegisterWindowMessage("TaskbarCreated");
     private TaskbarPlacement? _position;
     private bool _refreshPending;
-    private bool _closed;
+    private bool _closed,_suspended;
     private ContextMenu? _openMenu;
     private readonly PhysicalDeviceCenter _deviceCenter=new(DateTimeOffset.UtcNow);
     private Dictionary<string,TaskbarBattery> _remembered=>_deviceCenter.Inventory;
@@ -104,7 +104,7 @@ public partial class TaskbarBatteryWindow : Window
     private void RefreshReadings()
     {
         _refreshPending = false;
-        if (_closed) return;
+        if (_closed||_suspended) return;
         var c=RingConfig.Current;
         bool changed=_deviceCenter.RefreshInventory(TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings),c);
         if(changed){SaveKnownDevices();RingConfig.Save();}
@@ -115,7 +115,7 @@ public partial class TaskbarBatteryWindow : Window
         if(areas.HasFlag(PreferenceArea.Providers))_scanner.Poll(DateTimeOffset.UtcNow);
         if(areas.HasFlag(PreferenceArea.Layout)){ApplySnapshot(ReadSnapshot(),true);_animator.RefreshLayout();}
     }
-    private void StateTick(object? sender,EventArgs e){if(!_closed){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());_stateTimer.Interval=TimeSpan.FromMilliseconds(_groups.Length==0?1500:500);}}
+    private void StateTick(object? sender,EventArgs e){if(!_closed&&!_suspended){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());_stateTimer.Interval=TimeSpan.FromMilliseconds(_groups.Length==0?1500:500);}}
     private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
@@ -130,6 +130,7 @@ public partial class TaskbarBatteryWindow : Window
         if(!_tray.RediscoverDevicesEnabled)_deviceCenter.Suppress(now,TimeSpan.FromSeconds(5));
         return _deviceCenter.Advance(RingConfig.Current,now);
     }
+    private static bool SamePresentation(TaskbarBattery[] a,TaskbarBattery[] b){if(a.Length!=b.Length)return false;for(int i=0;i<a.Length;i++)if(!TaskbarBattery.SamePresentation(a[i],b[i]))return false;return true;}
     internal static bool SameGrouping(DeviceGroup[] left,DeviceGroup[] right){
         if(left.Length!=right.Length)return false;
         for(int i=0;i<left.Length;i++){
@@ -142,22 +143,25 @@ public partial class TaskbarBatteryWindow : Window
     private void ApplySnapshot(PhysicalDeviceSnapshot snapshot,bool force=false)
     {
         var c=RingConfig.Current;
-        bool changed=force||!_rows.SequenceEqual(snapshot.Rows);
+        bool changed=force||!SamePresentation(_rows,snapshot.Rows);
+        bool timestampChanged=!_rows.SequenceEqual(snapshot.Rows);
         bool groupingChanged=_settings!=null&&!SameGrouping(_groups,snapshot.Groups);
         _groups=snapshot.Groups;_rows=snapshot.Rows;RingDiagnostics.Observe(_groups);
         if(changed){
             _animator.Update(_rows);
             foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);
         }
-        if(changed||groupingChanged)_settings?.UpdateDevices(_rows,_groups);
+        if(!changed&&timestampChanged)_animator.RefreshTimestamps(_rows);
+        if(changed||groupingChanged||timestampChanged)_settings?.UpdateDevices(_rows,_groups);
         _notifications.Observe(snapshot,DateTimeOffset.UtcNow);
     }
 
-    internal void PrepareResume(){if(_closed)return;_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.RequestRescan();TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
+    internal void PrepareSuspend(){if(_closed||_suspended)return;_suspended=true;_scanner.Suspend();_positionTimer.Stop();_stateTimer.Stop();_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(30));TaskbarAutomationProbe.Invalidate();Hide();}
+    internal void PrepareResume(){if(_closed)return;_suspended=false;_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.Resume();_positionTimer.Start();_stateTimer.Start();TaskbarAutomationProbe.Invalidate();QueueRefresh();UpdatePlacement();}
 
     private void Reposition(object? sender, EventArgs e)
     {
-        if(_closed)return;
+        if(_closed||_suspended)return;
         // Placement no longer drives provider scans or the device state clock.
         _positionTimer.Interval=TimeSpan.FromMilliseconds(_animator.Width<=0?2000:_placementReady?1000:250);
         if (_openMenu?.IsOpen == true) {

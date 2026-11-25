@@ -1,0 +1,41 @@
+using System;
+using LGSTrayPrimitives;
+using Xunit;
+namespace LGSTrayUI.Tests;
+public class GameSirPerformanceTests{
+    [Theory][InlineData(0x10A9)][InlineData(0x105E)][InlineData(0x109C)]
+    public void G7KnownEditionUsesWgiAndNotCycloneProtocol(int pid){
+        Assert.Equal("GameSir G7 Pro",ControllerIdentity.KnownName(0x3537,(ushort)pid));
+        Assert.False(ControllerInputBattery.Supports(0x3537,(ushort)pid));
+    }
+    [Fact]public void CycloneAcceptsOnlyLiveStateReports(){
+        byte[] frame=new byte[64];frame[0]=0x12;frame[36]=77;frame[35]=1;
+        Assert.Null(ControllerInputBattery.Decode(0x3537,0x100B,frame,64));
+        frame[1]=128;Assert.Equal((77,true,false),ControllerInputBattery.Decode(0x3537,0x100B,frame,64)!.Value);
+        frame[36]=101;Assert.Null(ControllerInputBattery.Decode(0x3537,0x100B,frame,64));
+        frame[36]=50;frame[35]=2;Assert.Null(ControllerInputBattery.Decode(0x3537,0x100B,frame,64));
+        Assert.Null(ControllerInputBattery.Decode(0x3537,0x10A9,frame,64));
+    }
+    [Fact]public void SharedPidNotAssumedToBeG7(){
+        Assert.False(ControllerIdentity.IsG7(0x3537,0x1004));
+    }
+    [Fact]public void VisualComparisonIgnoresOnlyTimestamp(){
+        var a=new TaskbarBattery(DeviceType.Gamepad,"GameSir G7 Pro",72,"已连接",false,DateTimeOffset.UtcNow,"gip:a");
+        Assert.True(TaskbarBattery.SamePresentation(a,a with{Updated=a.Updated.AddSeconds(1)}));
+        Assert.False(TaskbarBattery.SamePresentation(a,a with{Level=73}));
+        Assert.False(TaskbarBattery.SamePresentation(a,a with{Estimated=true}));
+        Assert.False(TaskbarBattery.SamePresentation(a,a.WithConnection(ConnectionState.Reconnecting)));
+    }
+    [Fact]public void ResumeInvalidatesOldPercentWithoutFabricatingDisconnect(){
+        var a=new TaskbarBattery(DeviceType.Gamepad,"GameSir G7 Pro",72,"已连接",true,DateTimeOffset.UtcNow,"gip:a");
+        var b=ProviderScheduler.InvalidateForResume(a);
+        Assert.Equal(ConnectionState.Reconnecting,b.Connection);
+        Assert.Null(b.Level);Assert.Equal(72,b.LastKnownLevel);Assert.True(b.Stale);Assert.False(b.Charging);
+    }
+    [Fact]public void StartupStaggerAndStablePollsAreBounded(){
+        Assert.Equal(0,ProviderScheduler.InitialDelayMs("gip"));
+        Assert.InRange(ProviderScheduler.InitialDelayMs("controller-hid"),1,2500);
+        Assert.Equal(15,ProviderScheduler.AdaptiveInterval("controller-hid",TimeSpan.FromSeconds(10),3).TotalSeconds);
+        Assert.Equal(2,ProviderScheduler.AdaptiveInterval("gip",TimeSpan.FromSeconds(2),100).TotalSeconds);
+    }
+}

@@ -109,3 +109,14 @@ Protocol facts consulted (implementations not hardware certified in this fork):
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/playstation.py
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/nintendo.py
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/wgi.py
+
+## Third 2.0.0 checkpoint: GameSir and resource lifecycle (unbuilt)
+
+- G7 Pro known edition IDs, including Wuchang 3537:10A9 and ZZZ 105E, use WGI; the shared 1004 ID is not assumed to be G7. The 10A9 high-rate mode is not treated as a private configuration channel. XInput is a band fallback; unique inferred links are reversible, with G7 history restricted per PID.
+- Cyclone 2 (100B/102A/101D/1053) vendor page FFF0: passive live 0x12 input battery field, explicit opt-in documented status query only when the descriptor confirms a 64-byte output report. Never send this command to G7 Pro. Invalid levels, charge states and all-zero idle receiver frames are rejected. Exact device validation remains required.
+- Sleep: coalesced suspend notifications cancel UI-side provider work, stop placement/state timers; resume invalidates pre-sleep values and staggers reads. Existing HID supervisor resume paths retained. Native blocked calls are not overlapped.
+- UIA: cache-only element properties, deduplicated bounds, stale generation rejection and capture metrics. No unsafe placement reuse across Explorer/layout changes.
+- HID reader loops have explicit thread completion; native handle closure is deferred until actual loop completion and disposal. Partial receiver handles closed. Efficiency-mode process wrapper and restarted process wrapper disposed. No forced GC or working-set trimming.
+- Timestamp-only UI refresh avoids reflow, while tooltip freshness is kept; fixed ring geometry and brushes cached. Startup throttling deferred until host ready, hidden power HWND created without show/hide, provider scans staggered. GC/heap/pool/UIA/phase diagnostics added. The performance sampler's -AnalyzeCsv option summarizes per-process resource deltas after warmup. These are instrumentation and source changes, not measured improvements.
+
+GameSir references: https://github.com/broroeror/gamesir-linux-tools/blob/main/vendors/gamesir/models/g7pro/protocol.py ; https://github.com/nmkha16/battery-deck/blob/main/src/providers/gamesir.cpp ; https://github.com/HeyOkay/HaloBattery/blob/main/providers/wgi.py . Original project credits retained.

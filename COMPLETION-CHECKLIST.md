@@ -21,17 +21,17 @@ The existing main 2.0.0 CI success is for the baseline only.
 | 19 | Delta II/Pelta; Cetra SpeedNova L/R/case parsing and aggregate | Other models and real component/standby validation |
 | 20 | Existing guarded SPEEDNOVA implementation retained | Shared receiver identity and real hardware tests |
 | 21 | MD200 and ProArt MD301 plus existing TUF profiles | Additional TUF/ProArt models and physical tests |
-| 22 | GameSir G7 Pro WGI placeholder guard and raw hotplug | Proprietary reports, modes and additional models; actual G7 Pro test |
+| 22 | G7 Pro edition naming and WGI fallback; Cyclone 2 native frame parser, opt-in bounded query; per-PID history | Actual 10A9 on/off/dock/charge reports; validate Cyclone 2; other GameSir private modes and models |
 | 23 | Passive Sony DS4/DualSense/Edge with CRC and approximate levels | Basic Bluetooth reports contain no battery; hardware tests |
 | 24 | Passive Switch Pro/Joy-Con full input battery bands | Basic mode, Switch 2 protocols and hardware tests |
 | 25 | Passive enhanced input reports for SF30/SN30 Pro, Pro 2/3 | Basic mode and Ultimate/new proprietary report families; hardware tests |
 | 27 | Separate ASUS/ASTRO/controller-HID controls; no controller mode writes | Actual coexistence tests with G HUB, Armoury Crate, Steam and games |
-| 30 | Existing HID++ retry backoff; passive controller input and no false padded zero | Standby/wake behavior under real hardware |
-| 31 | UIA failure backoff retained | Explorer/DPI/taskbar stress measurement |
-| 32 | Managed hotplug channel retained; coalesced raw controller events | End-to-end thread count measurement |
-| 33 | Existing allocation reductions; narrow retention of confirmed old sources | Allocation/heap profiling |
-| 34 | Native lifetime guards retained | Handle/GDI/USER soak measurements |
-| 35 | Existing startup work retained | Startup profiling |
+| 30 | Suspend cancels provider work; stop UI timers; invalidate old level and stagger resume; stable poll backoff | Physical sleep/wake, low-power receiver states, S0/S3 and power use measurement |
+| 31 | UIA cache-only properties, deduplication, stale rejection, capture metrics | Explorer/DPI/fullscreen/taskbar stress and capture latency measurement |
+| 32 | Owned reader threads; actual completion; no blocking async continuation on pool; batched controller rescans | Actual UI and HID worker thread counts, reader error/replug tests |
+| 33 | Timestamp-only no reflow, cached ring geometry/brushes, offline retention allocation fix; GC diagnostics | Allocation/heap profiling and before/after working/private memory measurement |
+| 34 | Close partial receivers; defer native close until reader completion; dispose process wrappers; per-PID CSV analysis | Handle/GDI/USER trend testing on reconnect, sleep, UI and long run |
+| 35 | Startup phases, stagger scan, defer efficiency throttling, create power HWND without show/hide | Cold/warm Windows startup benchmark and readiness/rollback smoke test |
 | 39 | Explicit local import and fixed HTTPS online display-only catalog with size/schema checks | Online endpoint available after integration; independently trusted protocol updates |
 | 40 | 168-hour sampler retained; not run | Actual 168-hour run on representative systems |
 
@@ -45,3 +45,5 @@ imported. No network request is made by the import. Hardware descriptors and
 standard BLE service still govern actual battery availability.
 
 Second checkpoint: additional C# parser and safety regression tests are authored but have not been compiled or executed. No new package, release, or version. Original 27 items remain open until their remaining acceptance criteria are met.
+
+Third checkpoint prioritizes 22 and 30–35. Source changes and tests authored, no Windows build or hardware measurements. These seven remain open for their explicit validation gates; no version bump or release.

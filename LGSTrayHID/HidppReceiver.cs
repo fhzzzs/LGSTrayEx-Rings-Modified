@@ -554,6 +554,9 @@ public class HidppReceiver : IDisposable
 
                 // Then dispose message channel (stops read threads)
                 _messageChannel.Dispose();
+                // Before the two collections are both present, no reader owns
+                // either handle. Close partially initialized receivers here.
+                if(!_readingStarted){if(DevShort!=IntPtr.Zero)HidApi.HidApi.HidClose(DevShort);if(DevLong!=IntPtr.Zero&&(nint)DevLong!=(nint)DevShort)HidApi.HidApi.HidClose(DevLong);}
 
                 // Dispose synchronization primitives
                 _correlationSemaphore.Dispose();

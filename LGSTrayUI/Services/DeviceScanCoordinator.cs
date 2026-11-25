@@ -30,7 +30,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
             new BatteryProvider("xinput",c=>c.UseXInput,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>Worker(XInputBatteryReader.Read,t)),
             new BatteryProvider("asus",c=>c.UseAsus,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(30),t=>Worker(()=>AsusBatteryReader.Read(t),t)),
             new BatteryProvider("astro",c=>c.UseAstro,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadAstro(t),t)),
-            new BatteryProvider("controller-hid",c=>c.UseControllerHid,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t),t))
+            new BatteryProvider("controller-hid",c=>c.UseControllerHid,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>{bool query=RingConfig.Current.GameSirCycloneQuery;return Worker(()=>AsusBatteryReader.ReadControllerInput(t,query),t);})
         },dispatcher,()=>Changed?.Invoke());
         try{Gamepad.GamepadAdded+=GamepadChanged;try{Gamepad.GamepadRemoved+=GamepadChanged;eventsSubscribed=true;}catch{Gamepad.GamepadAdded-=GamepadChanged;}}
         catch(Exception ex){DiagnosticLogger.LogWarning("Gamepad change registration: "+ex.Message);}
@@ -42,8 +42,10 @@ internal sealed class DeviceScanCoordinator:IDisposable
     private void QueueGamepadRescan()
     {
         if(dispatcher.HasShutdownStarted||Interlocked.Exchange(ref gamepadRescanQueued,1)!=0)return;
-        dispatcher.BeginInvoke(new Action(()=>{Interlocked.Exchange(ref gamepadRescanQueued,0);if(disposed)return;scheduler.Rescan("gip");scheduler.Rescan("xinput");scheduler.Rescan("controller-hid");}));
+        dispatcher.BeginInvoke(new Action(()=>{Interlocked.Exchange(ref gamepadRescanQueued,0);if(disposed)return;scheduler.RescanMany("gip","xinput","controller-hid");}));
     }
+    internal void Suspend(){if(!disposed)scheduler.Suspend();}
+    internal void Resume(){if(!disposed)scheduler.Resume();}
     internal void RequestRescan(){if(!disposed)scheduler.Rescan();}
     internal void Poll(DateTimeOffset now){if(!disposed)scheduler.Poll();}
     public void Dispose(){if(disposed)return;disposed=true;if(eventsSubscribed){try{Gamepad.GamepadAdded-=GamepadChanged;Gamepad.GamepadRemoved-=GamepadChanged;}catch{}}if(rawEventsSubscribed){try{RawGameController.RawGameControllerAdded-=RawGamepadChanged;RawGameController.RawGameControllerRemoved-=RawGamepadChanged;}catch{}}scheduler.Dispose();}

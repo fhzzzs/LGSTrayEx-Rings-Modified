@@ -54,6 +54,8 @@ internal sealed record TaskbarBattery
     public int? LastKnownLevel {get;init;}
     public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?(Estimated?ReadingQuality.Band:ReadingQuality.Exact):
         ShortLabel is "Empty" or "Low" or "Med" or "Full"?ReadingQuality.Band:ReadingQuality.Unknown;
+    // Timestamp-only refreshes must not rebuild UI or allocate record clones.
+    internal static bool SamePresentation(TaskbarBattery a,TaskbarBattery b)=>a.Key==b.Key&&a.Type==b.Type&&a.Name==b.Name&&a.Level==b.Level&&a.Connection==b.Connection&&a.ChargeState==b.ChargeState&&a.Charging==b.Charging&&a.Status==b.Status&&a.ShortLabel==b.ShortLabel&&a.PhysicalId==b.PhysicalId&&a.HardwareVendorId==b.HardwareVendorId&&a.HardwareProductId==b.HardwareProductId&&a.Estimated==b.Estimated&&a.Stale==b.Stale&&a.LastKnownLevel==b.LastKnownLevel;
     public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value && value is >=0 and <=100 ? $"{value}%" : "—");
     public int BarValue => Level is >=0 and <=100 ? Level.Value : 0;
     public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";

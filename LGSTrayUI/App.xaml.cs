@@ -42,7 +42,7 @@ public partial class App : Application
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
     private TaskbarBatteryWindow? _taskbarBatteries;
     private DeviceScanCoordinator? _scanner;
-    private int _resumeInFlight;
+    private int _resumeInFlight,_powerSuspended;
     private IPublisher<SystemSuspendingMessage>? _suspendPublisher;
     private IPublisher<SystemResumingMessage>? _resumePublisher;
 
@@ -77,6 +77,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        RingDiagnostics.StartupPhase("WPF startup",startupWatch.ElapsedMilliseconds);
 
         Directory.SetCurrentDirectory(AppContext.BaseDirectory);
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
@@ -84,7 +85,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CrashHandler);
         Microsoft.Win32.SystemEvents.PowerModeChanged += AppExtensions_PowerModeChanged;
 
-        EnableEfficiencyMode();
+        // Apply background throttling only after core startup is ready.
 
         // STEP 1: Load configuration with validation service
         var validationService = new ConfigurationValidationService(); // Early instantiation before DI
@@ -94,6 +95,7 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        RingDiagnostics.StartupPhase("Configuration loaded",startupWatch.ElapsedMilliseconds);
         IConfiguration config = builder.Configuration;
         var appSettings = config.Get<AppSettings>()!;
 
@@ -170,6 +172,7 @@ public partial class App : Application
 
         var host = builder.Build();
         _host = host; // Store host reference for wake handler
+        RingDiagnostics.StartupPhase("Host built",startupWatch.ElapsedMilliseconds);
 
         // Get publishers from DI
         _suspendPublisher = host.Services.GetRequiredService<IPublisher<SystemSuspendingMessage>>();
@@ -181,8 +184,8 @@ public partial class App : Application
         // Create hidden window for Modern Standby power notifications
         // This works on both S3 (traditional sleep) and S0 (Modern Standby) systems
         _powerWindow = new PowerNotificationWindow(this, _suspendPublisher, _resumePublisher);
-        _powerWindow.Show(); // Must call Show() to initialize window handle
-        _powerWindow.Hide(); // Then hide immediately
+        // Create HWND and register power notifications without a show/hide render.
+        new System.Windows.Interop.WindowInteropHelper(_powerWindow).EnsureHandle();
 
         var trayViewModel=host.Services.GetRequiredService<NotifyIconViewModel>();
         _scanner=new DeviceScanCoordinator(Dispatcher);
@@ -190,13 +193,14 @@ public partial class App : Application
         _taskbarBatteries.Closed+=(_,_)=>_taskbarBatteries=null;
         host.Services.GetRequiredService<MainTaskbarIconWrapper>().Initialize(trayViewModel,()=>_taskbarBatteries?.ShowSettings(),()=>_taskbarBatteries?.Rescan(),()=>_taskbarBatteries?.ShowDevices(),()=>_taskbarBatteries?.OnlineCount??0);
 
+        RingDiagnostics.StartupPhase("Tray UI created",startupWatch.ElapsedMilliseconds);
         // WPF owns the dispatcher lifetime; stop/dispose the host explicitly.
         host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(
             ()=>Dispatcher.BeginInvoke(new Action(RequestExit)));
         try{
             _hostStart=host.StartAsync(_startupCancellation.Token);
             await _hostStart;
-            if(!_exitRequested){RingDiagnostics.Startup(startupWatch.ElapsedMilliseconds);UpdateTransaction.MarkReady();}
+            if(!_exitRequested){RingDiagnostics.Startup(startupWatch.ElapsedMilliseconds);UpdateTransaction.MarkReady();Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,new Action(()=>{if(!_exitRequested)EnableEfficiencyMode();}));}
         }catch(OperationCanceledException) when(_exitRequested){}
         catch(Exception ex){DiagnosticLogger.LogError("Host start failed: "+ex.Message);RequestExit();}
     }
@@ -209,7 +213,7 @@ public partial class App : Application
                 DiagnosticLogger.Log("System is suspending to sleep (SystemEvents.PowerModeChanged)");
 
                 // Send message to suspend notifications
-                _suspendPublisher?.Publish(new SystemSuspendingMessage());
+                HandleSystemSuspend();
                 break;
             // Resume is handled exclusively by WM_POWERBROADCAST (PowerNotificationWindow),
             // which fires for both S3 and Modern Standby. PowerModeChanged.Resume would
@@ -221,9 +225,16 @@ public partial class App : Application
     /// Handle system wake - give USB devices time to stabilize, then rediscover.
     /// Called exclusively by WM_POWERBROADCAST (covers both S3 and Modern Standby).
     /// </summary>
+    internal void HandleSystemSuspend(){
+        if(_exitRequested||Interlocked.Exchange(ref _powerSuspended,1)!=0)return;
+        _suspendPublisher?.Publish(new SystemSuspendingMessage());
+        if(Dispatcher.CheckAccess())_taskbarBatteries?.PrepareSuspend();
+        else if(!Dispatcher.HasShutdownStarted)Dispatcher.BeginInvoke(new Action(()=>_taskbarBatteries?.PrepareSuspend()));
+    }
     public async Task HandleSystemResumeAsync()
     {
         if(_exitRequested||Interlocked.Exchange(ref _resumeInFlight,1)!=0)return;
+        Interlocked.Exchange(ref _powerSuspended,0);
         try
         {
             // Wait 2 seconds for USB devices to fully wake and stabilize
@@ -337,7 +348,7 @@ public partial class App : Application
             if(File.Exists(UpdateTransaction.MarkerPath(Path.GetDirectoryName(executable)!)))
                 start.ArgumentList.Add("--update-from="+PortableLayout.CurrentEntry);
             if(LoggingEnabled)start.ArgumentList.Add("--log");
-            System.Diagnostics.Process.Start(start);
+            using var launched=System.Diagnostics.Process.Start(start);
         }catch(Exception ex){DiagnosticLogger.LogWarning("Restart failed: "+ex.Message);}
         DiagnosticLogger.Log("Application exit complete");
         base.OnExit(e);
@@ -530,7 +541,7 @@ internal class PowerNotificationWindow : Window
                 DiagnosticLogger.Log("System suspending (WM_POWERBROADCAST)");
 
                 // Send message to suspend notifications
-                _suspendPublisher.Publish(new SystemSuspendingMessage());
+                _app.HandleSystemSuspend();
             }
             else if (powerEvent == PBT_APMRESUMEAUTOMATIC)
             {

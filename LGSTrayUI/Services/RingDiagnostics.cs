@@ -15,13 +15,17 @@ internal static class RingDiagnostics
     private static DeviceGroup[] groups=[];
     private static long startupMs=-1;
     internal static void Startup(long elapsedMs)=>startupMs=elapsedMs;
+    private static readonly System.Collections.Generic.Dictionary<string,long> startupPhases=new(StringComparer.Ordinal);
+    internal static void StartupPhase(string name,long ms)=>startupPhases[name]=ms;
     [DllImport("user32.dll")] private static extern uint GetGuiResources(nint process,uint flags);
     private static readonly ConcurrentDictionary<string,string> selected=new(StringComparer.Ordinal);
     internal static void Provider(ProviderDiagnostic value)=>providers[value.Id]=value;
     private static readonly BatteryHistory history=new(256);
     internal static string HardwareInventory {get;set;}="Not collected; use hardware discovery in diagnostics.";
     internal static void Observe(DeviceGroup[] snapshot){
-        if(groups.Length!=snapshot.Length||!groups.Select(g=>g.Reading.Key).SequenceEqual(snapshot.Select(g=>g.Reading.Key))){
+        bool membershipChanged=groups.Length!=snapshot.Length;
+        if(!membershipChanged)for(int i=0;i<groups.Length;i++)if(groups[i].Reading.Key!=snapshot[i].Reading.Key){membershipChanged=true;break;}
+        if(membershipChanged){
             var keys=snapshot.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);foreach(var k in selected.Keys)if(!keys.Contains(k))selected.TryRemove(k,out _);
         }
         groups=snapshot;history.Observe(snapshot,DateTimeOffset.UtcNow);
@@ -38,6 +42,11 @@ internal static class RingDiagnostics
             b.AppendLine($"GDI objects: {GetGuiResources(p.Handle,0)} · USER objects: {GetGuiResources(p.Handle,1)} · CPU time: {p.TotalProcessorTime.TotalSeconds:F1}s");
             b.AppendLine($"Uptime: {Math.Max(0,(now-p.StartTime.ToUniversalTime()).TotalSeconds):F0}s · Peak working set: {p.PeakWorkingSet64/1048576d:F1} MiB");
         }
+        var gc=GC.GetGCMemoryInfo();
+        b.AppendLine($"Managed heap: {gc.HeapSizeBytes/1048576d:F1} MiB · committed: {gc.TotalCommittedBytes/1048576d:F1} MiB · allocated since start: {GC.GetTotalAllocatedBytes(false)/1048576d:F1} MiB");
+        b.AppendLine($"GC collections: {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)} · pool threads: {System.Threading.ThreadPool.ThreadCount} · pending work: {System.Threading.ThreadPool.PendingWorkItemCount}");
+        b.AppendLine("Shell UIA: "+TaskbarAutomationProbe.Metrics);
+        foreach(var phase in startupPhases)b.AppendLine($"Startup phase {phase.Key}: {phase.Value} ms");
         if(startupMs>=0)b.AppendLine($"Startup to host ready: {startupMs} ms");
         b.AppendLine($"Animation channels: {RingFrameClock.ActiveCount} · Devices: {groups.Length}");
         b.AppendLine($"Diagnostic log: {AppDataPaths.LocalAppDataDir}\\diagnostic.log");

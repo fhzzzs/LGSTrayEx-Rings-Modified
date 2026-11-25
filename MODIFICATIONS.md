@@ -52,3 +52,6 @@ Additional ASTRO A50 Gen 5 and ASUS direct keyboard/headset adapters; scoped HID
 
 ## 2.0.0 completion checkpoint 2 (unbuilt)
 Passive native Sony/Nintendo/8BitDo report readers; scoped legacy 0x0D fallback; expanded ASUS profiles and Cetra components; WGI placeholder validation; confirmed-history retention; data-only online catalog and independent provider switches. Refer to COMPLETION-CHECKLIST.md. No version bump or Windows validation.
+
+## 2.0.0 completion checkpoint 3 (unbuilt)
+GameSir G7 edition IDs and safe WGI fallback, Cyclone 2 live report parser and opt-in status request; sleep/resume scan control, UIA caching/metrics, actual HID reader completion, partial handle cleanup, stable ring geometry caching, timestamp-only rendering path, startup phase instrumentation, and CSV resource delta analysis. 22 and 30–35 advanced; no build or hardware acceptance claimed.

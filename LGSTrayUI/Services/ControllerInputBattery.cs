@@ -2,10 +2,11 @@ using System;
 namespace LGSTrayUI;
 
 // Passive input-report facts from Linux hid-playstation and hid-nintendo.
-// No output reports, mode negotiation, or pairing writes are needed here.
+// Decoders never send output reports. Only the separately enabled Cyclone 2 reader may issue its documented status query.
 internal static class ControllerInputBattery
 {
     internal static bool Supports(ushort vid,ushort pid)=>vid switch{
+        0x3537=>ControllerIdentity.IsCyclone2(vid,pid),
         0x054C=>pid is 0x0CE6 or 0x0DF2 or 0x05C4 or 0x09CC or 0x05C5,
         0x2DC8=>pid is 0x6000 or 0x6100 or 0x6001 or 0x6101 or 0x6003 or 0x6006 or 0x6009,
         0x057E=>pid is 0x2006 or 0x2007 or 0x2009,
@@ -21,6 +22,12 @@ internal static class ControllerInputBattery
     }
     internal static (int Level,bool Charging,bool Full)? Decode(ushort vid,ushort pid,byte[] data,int count,bool? bluetooth=null){
         if(!Supports(vid,pid)||count<=0||count>data.Length)return null;
+        if(vid==0x3537){
+            // Cyclone 2 vendor state report; never apply to G7 Pro modes.
+            if(count<37||data[0]!=0x12||(data[1]|data[2]|data[3]|data[4])==0||data[36]>100||data[35]>2)return null;
+            if(data[35]==2&&data[36]!=100)return null;
+            return(data[36],data[35]==1,data[35]==2);
+        }
         if(vid==0x2DC8){
             // Only existing enhanced reports. Feature report 0x06 would
             // switch controller mode and may break DirectInput; never send it.

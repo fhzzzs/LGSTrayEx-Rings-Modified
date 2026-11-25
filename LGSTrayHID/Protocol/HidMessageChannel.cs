@@ -1,207 +1,94 @@
 using LGSTrayHID.HidApi;
 using LGSTrayHID.Routing;
 using LGSTrayPrimitives;
-
 using static LGSTrayHID.HidApi.HidApi;
 
 namespace LGSTrayHID.Protocol;
 
-/// <summary>
-/// Manages HID message reading threads and lifecycle.
-/// Handles two parallel read threads (SHORT and LONG messages) with proper cleanup.
-/// </summary>
+// Each native handle has one owner. The actual read loop, not an async-void
+// thread entry stub, signals completion. Close only after reader termination
+// AND receiver disposal; a temporary read error must not close a live writer.
 public class HidMessageChannel : IDisposable
 {
+    private sealed class Reader(HidDevicePtr device,int size){
+        internal readonly HidDevicePtr Device=device;
+        internal readonly int Size=size;
+        internal readonly TaskCompletionSource<bool> Completed=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
     private readonly HidMessageRouter _router;
-    private readonly CancellationTokenSource _cancellationSource = new();
-    private readonly List<Thread> _readerThreads = new();
-    private readonly TaskCompletionSource<bool> _readySignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private const int DEVICE_READ_TIMEOUT_MS = 100;
-    private const int THREAD_EXIT_TIMEOUT_MS = 5000; // 5 seconds
-
-    public HidMessageChannel(HidMessageRouter router)
-    {
-        _router = router;
-    }
-
-    /// <summary>
-    /// Starts two parallel read threads (SHORT and LONG messages).
-    /// Threads run at BelowNormal priority to avoid starving UI thread.
-    /// </summary>
-    /// <param name="devShort">HID device handle for SHORT (7-byte) messages</param>
-    /// <param name="devLong">HID device handle for LONG (20-byte) messages</param>
-    public void StartReading(HidDevicePtr devShort, HidDevicePtr devLong)
-    {
-        Thread shortThread = new(async () =>
-        {
-            // Signal ready immediately when first thread starts
-            _readySignal.TrySetResult(true);
-            await ReadThreadAsync(devShort, 7);
-        })
-        {
-            Priority = ThreadPriority.BelowNormal,
-            Name = "HID-SHORT-Reader"
-        };
-        lock (_readerThreads) { _readerThreads.Add(shortThread); }
-        shortThread.Start();
-
-        Thread longThread = new(async () => { await ReadThreadAsync(devLong, 20); })
-        {
-            Priority = ThreadPriority.BelowNormal,
-            Name = "HID-LONG-Reader"
-        };
-        lock (_readerThreads) { _readerThreads.Add(longThread); }
-        longThread.Start();
-    }
-
-    /// <summary>
-    /// Waits until HID read threads are ready to process messages.
-    /// Returns immediately if threads are already started.
-    /// </summary>
-    /// <returns>A task that completes when the read threads are ready</returns>
-    public Task WaitUntilReadyAsync() => _readySignal.Task;
-
-    /// <summary>
-    /// Reads HID messages in a loop until cancellation is requested.
-    /// Handles timeout (0 = retry), error (<0 = retry with backoff, then stop), and success (>0 = process).
-    /// </summary>
-    private async Task ReadThreadAsync(HidDevicePtr device, int bufferSize)
-    {
-        byte[] buffer = new byte[bufferSize];
-        CancellationToken ct = _cancellationSource.Token;
-        int consecutiveErrors = 0;
-        const int MAX_CONSECUTIVE_ERRORS = 5;
-        const int ERROR_RETRY_DELAY_MS = 500;
-
-        while (!ct.IsCancellationRequested)
-        {
-            var bytesRead = device.Read(buffer, bufferSize, DEVICE_READ_TIMEOUT_MS);
-
-            // Check cancellation immediately after blocking read
-            if (ct.IsCancellationRequested) break;
-
-            if (bytesRead < 0)
-            {
-                consecutiveErrors++;
-
-                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
-                {
-                    // Persistent error - device likely disconnected or unrecoverable issue
-                    DiagnosticLogger.LogError(
-                        $"HID read error on {bufferSize}b thread after {consecutiveErrors} attempts " +
-                        $"(return code: {bytesRead}). Thread exiting. " +
-                        $"Device may be disconnected or driver issue."
-                    );
-                    break;
+    private readonly CancellationTokenSource _cancellationSource=new();
+    private readonly object _gate=new();
+    private readonly List<Reader> _readers=[];
+    private readonly TaskCompletionSource<bool> _readySignal=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _disposed;
+    private static int _activeReaders;
+    public static int ActiveReaders=>Volatile.Read(ref _activeReaders);
+    public HidMessageChannel(HidMessageRouter router)=>_router=router;
+    public void StartReading(HidDevicePtr devShort,HidDevicePtr devLong){
+        lock(_gate){
+            if(_disposed)throw new ObjectDisposedException(nameof(HidMessageChannel));
+            if(_readers.Count!=0)throw new InvalidOperationException("HID readers already started");
+            _readers.Add(new(devShort,7));_readers.Add(new(devLong,20));
+            int started=0;
+            try{
+                foreach(var reader in _readers){
+                    var thread=new Thread(()=>ReadLoop(reader)){IsBackground=true,Priority=ThreadPriority.BelowNormal,Name=reader.Size==7?"HID-SHORT-Reader":"HID-LONG-Reader"};
+                    thread.Start();started++;
                 }
-
-                // Transient error - retry with delay
-                DiagnosticLogger.LogWarning(
-                    $"HID read error on {bufferSize}b thread (return code: {bytesRead}), " +
-                    $"attempt {consecutiveErrors}/{MAX_CONSECUTIVE_ERRORS}. Retrying in {ERROR_RETRY_DELAY_MS}ms..."
-                );
-
-                try
-                {
-                    await Task.Delay(ERROR_RETRY_DELAY_MS, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cancellation requested during delay
-                    break;
-                }
-                continue;
-            }
-
-            // Reset error counter on successful read (including timeouts)
-            if (consecutiveErrors > 0)
-            {
-                DiagnosticLogger.Log($"HID read on {bufferSize}b thread recovered after {consecutiveErrors} errors");
-                consecutiveErrors = 0;
-            }
-
-            if (bytesRead == 0) continue;  // Timeout - retry
-
-            LogRawMessage(buffer, bytesRead, bufferSize);
-
-            // Create a copy of the message to prevent data corruption
-            // Channel data  may be overwritten before being read by the router !
-            // as the router await only wait for the write to complete, not the read.
-            byte[] messageCopy = new byte[bytesRead];
-            Array.Copy(buffer, messageCopy, bytesRead);
-
-            await _router.RouteMessageAsync(messageCopy);
-        }
-
-        HidClose(device);
-    }
-
-
-    /// <summary>
-    /// Logs raw inbound (device-&gt;host) HID messages for debugging filtered by swid.
-    /// Skips common ping responses (0x10 0x?? 0x00) to reduce noise.    
-    /// </summary>
-    private static void LogRawMessage(byte[] buffer, int bytesRead, int bufferSize)
-    {
-        // Skip common ping responses AND check if verbose enabled before allocating
-        if ((buffer[0] != 0x10 || buffer[2] != 0x00) && DiagnosticLogger.IsVerboseEnabled)
-        {
-            // Log the full frame.
-            string hex = string.Join(" ", buffer.Take(bytesRead).Select(b => $"{b:X02}"));
-
-            // HID++ 1.0/2.0 frames carry the software ID in the low nibble of byte 3
-            // (byte 3 = funcId << 4 | swId). swId 0 = device-initiated event.
-            string swIdTag = "";
-            if (bytesRead > 3)
-            {
-                int swId = buffer[3] & 0x0F;
-                string owner = swId == 0 ? "evt" : swId == GlobalSettings.SoftwareId ? "ours" : "ext";
-                swIdTag = $" swId={swId}({owner})";
-            }
-
-            DiagnosticLogger.Verbose($"DEBUG RAW RX [{bufferSize}b]:{swIdTag} {hex}");
-        }
-    }
-
-
-    /// <summary>
-    /// Stops the read threads by triggering cancellation.
-    /// Waits for threads to exit gracefully before returning.
-    /// </summary>
-    public void Dispose()
-    {
-        DiagnosticLogger.Log("HidMessageChannel.Dispose starting");
-
-        // Signal threads to stop via cancellation token
-        _cancellationSource.Cancel();
-
-        // Snapshot the list to avoid "collection was modified" if accessed concurrently
-        List<Thread> threads;
-        lock (_readerThreads)
-        {
-            threads = [.. _readerThreads];
-            _readerThreads.Clear();
-        }
-
-        // Wait for all threads to exit
-        foreach (var thread in threads)
-        {
-            if (thread.IsAlive)
-            {
-                bool joined = thread.Join(THREAD_EXIT_TIMEOUT_MS);
-                if (!joined)
-                {
-                    DiagnosticLogger.LogWarning($"HidMessageChannel: Thread '{thread.Name}' did not exit within {THREAD_EXIT_TIMEOUT_MS}ms timeout");
-                }
-                else
-                {
-                    DiagnosticLogger.Log($"HidMessageChannel: Thread '{thread.Name}' exited successfully");
-                }
+                _readySignal.TrySetResult(true);
+            }catch{
+                for(int i=started;i<_readers.Count;i++)_readers[i].Completed.TrySetResult(true);
+                _cancellationSource.Cancel();throw;
             }
         }
-
+    }
+    public Task WaitUntilReadyAsync()=>_readySignal.Task;
+    private void ReadLoop(Reader reader){
+        Interlocked.Increment(ref _activeReaders);
+        try{
+            byte[] buffer=new byte[reader.Size];var token=_cancellationSource.Token;
+            int errors=0;
+            while(!token.IsCancellationRequested){
+                int count=reader.Device.Read(buffer,buffer.Length,250);
+                if(token.IsCancellationRequested)break;
+                if(count<0){
+                    if(++errors>=5){DiagnosticLogger.LogWarning($"HID {reader.Size}b reader stopped after five failures");break;}
+                    if(token.WaitHandle.WaitOne(500))break;
+                    continue;
+                }
+                errors=0;
+                if(count<7||count>buffer.Length)continue;
+                if(DiagnosticLogger.IsVerboseEnabled&&(buffer[0]!=0x10||buffer[2]!=0))
+                    DiagnosticLogger.Verbose($"DEBUG RAW RX [{reader.Size}b]: {Convert.ToHexString(buffer.AsSpan(0,count))}");
+                // Router may retain the frame in its response queue.
+                var frame=buffer.AsSpan(0,count).ToArray();
+                try{_router.RouteMessageAsync(frame).GetAwaiter().GetResult();}
+                catch(Exception ex){if(token.IsCancellationRequested)break;DiagnosticLogger.LogWarning("HID route: "+ex.Message);}
+            }
+        }catch(Exception ex){DiagnosticLogger.LogWarning("HID reader: "+ex.Message);}
+        finally{Interlocked.Decrement(ref _activeReaders);reader.Completed.TrySetResult(true);}
+    }
+    public void Dispose(){
+        Reader[] readers;
+        lock(_gate){
+            if(_disposed)return;_disposed=true;
+            _cancellationSource.Cancel();readers=_readers.ToArray();_readers.Clear();
+        }
+        var all=Task.WhenAll(readers.Select(r=>r.Completed.Task));
+        if(all.Wait(TimeSpan.FromSeconds(2)))Release(readers);
+        else{
+            DiagnosticLogger.LogWarning("HID reader shutdown pending; defer native close until the actual read exits.");
+            _=ReleaseAfterAsync(all,readers);
+        }
+    }
+    private async Task ReleaseAfterAsync(Task all,Reader[] readers){await all.ConfigureAwait(false);Release(readers);}
+    private void Release(Reader[] readers){
+        var closed=new HashSet<nint>();
+        foreach(var reader in readers){
+            nint handle=reader.Device;
+            if(handle!=0&&closed.Add(handle))try{HidClose(reader.Device);}catch(Exception ex){DiagnosticLogger.LogWarning("HID close: "+ex.Message);}
+        }
         _cancellationSource.Dispose();
-
-        DiagnosticLogger.Log("HidMessageChannel.Dispose completed");
+        DiagnosticLogger.Log($"HID readers released; active readers={ActiveReaders}");
     }
 }

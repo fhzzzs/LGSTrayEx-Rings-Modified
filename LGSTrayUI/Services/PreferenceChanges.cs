@@ -11,7 +11,7 @@ internal sealed record PreferenceFingerprint(string Identity,string Layout,strin
     internal static PreferenceFingerprint Capture(RingPreferences c)=>new(
         J(new{c.AutoAdd,c.AutoDeduplicate,c.DeviceAliases,c.AutomaticAliases,c.SeparateDeviceSources,c.IgnoredDevices,c.PreferredSources,c.Names,c.PhysicalSourceIds,c.PhysicalEvidenceIds,c.PhysicalSourceEvidence}),
         J(new{c.Size,c.Gap,c.LeftGap,c.RightGap,c.X,c.Y,c.Divider,c.DividerWidth,c.DividerHeight,c.Order,c.Hidden,c.AutoHide,c.Hover,c.Animate,c.Motion,c.Speed,c.GrayMs,c.WaitMs,c.OutMs,c.InMs,c.SpringMs,c.StaggerMs,c.Bounce}),
-        J(new{c.UseBle,c.UseGip,c.UseXInput,c.UseAsus,c.UseAstro,c.UseControllerHid,c.PollSeconds,c.BleSeconds}),
+        J(new{c.UseBle,c.UseGip,c.UseXInput,c.UseAsus,c.UseAstro,c.UseControllerHid,c.GameSirCycloneQuery,c.PollSeconds,c.BleSeconds}),
         J(RingThemes.Snapshot(c)),
         J(new{c.Alerts,c.Sound,c.ConnectionAlerts,c.FullChargeAlerts,c.QuietNotifications,c.SuppressFullScreen,c.NotificationSeconds,c.NotificationWidth,c.NotificationOpacity,c.NotificationCorner,c.NotificationMonitor,c.Rules,c.DeviceRules,c.AlertSounds}));
     internal PreferenceArea Diff(PreferenceFingerprint other){

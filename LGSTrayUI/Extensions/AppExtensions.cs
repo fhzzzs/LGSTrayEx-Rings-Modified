@@ -10,7 +10,8 @@ public static class AppExtensions
     {
         try
         {
-            var processHandle = Process.GetCurrentProcess().SafeHandle;
+            using var process = Process.GetCurrentProcess();
+            var processHandle = process.SafeHandle;
             var handle = new Winmdroot.Foundation.HANDLE(processHandle.DangerousGetHandle());
             Winmdroot.PInvoke.SetPriorityClass(handle, Winmdroot.System.Threading.PROCESS_CREATION_FLAGS.IDLE_PRIORITY_CLASS);
 

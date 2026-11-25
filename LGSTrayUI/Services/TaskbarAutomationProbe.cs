@@ -19,6 +19,8 @@ internal static class TaskbarAutomationProbe
     private static long generation;
     private static long retryAfter;
     private static int failures;
+    private static long captures,cacheHits,rejected,totalMs;
+    internal static string Metrics=>$"captures={Interlocked.Read(ref captures)} cache hits={Interlocked.Read(ref cacheHits)} rejected={Interlocked.Read(ref rejected)} total capture ms={Interlocked.Read(ref totalMs)}";
     internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
     internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
     internal static bool Fresh(long now,long started,long completed)
@@ -28,10 +30,10 @@ internal static class TaskbarAutomationProbe
         controls=[];
         long now=Environment.TickCount64;long currentGeneration=Volatile.Read(ref generation);
         if(pending?.IsCompleted==true){
-            if(pending.IsCompletedSuccessfully&&pending.Result is { } captured&&captured.Controls.Length>0){
+            if(pending.IsCompletedSuccessfully&&pending.Result is { } captured&&captured.Controls.Length>0&&captured.Generation==currentGeneration&&Fresh(now,captured.Started,captured.Completed)){
                 last=captured;failures=0;retryAfter=0;
             }else{
-                last=null;failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);
+                last=null;Interlocked.Increment(ref rejected);failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);
             }
             pending=null;
         }
@@ -41,11 +43,11 @@ internal static class TaskbarAutomationProbe
         if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=900))
             pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         if(!matching||last!.Controls.Length==0)return false;
-        controls=last.Controls;return true;
+        Interlocked.Increment(ref cacheHits);controls=last.Controls;return true;
     }
     private static Snapshot? Capture(nint bar,TaskbarPlacement.PixelRect bounds,long captureGeneration)
     {
-        long start=Environment.TickCount64;
+        long start=Environment.TickCount64;Interlocked.Increment(ref captures);
         try{
             var condition=new OrCondition(
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),
@@ -53,18 +55,18 @@ internal static class TaskbarAutomationProbe
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.ListItem),
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.MenuItem),
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.CheckBox));
-            var request=new CacheRequest{TreeScope=TreeScope.Element};
+            var root=AutomationElement.FromHandle(bar);
+            var request=new CacheRequest{TreeScope=TreeScope.Element,AutomationElementMode=AutomationElementMode.None};
             foreach(var p in new[]{AutomationElement.BoundingRectangleProperty,AutomationElement.IsOffscreenProperty})request.Add(p);
-            var result=new List<Rect>();
+            var result=new HashSet<Rect>();
             using(request.Activate()){
-                var root=AutomationElement.FromHandle(bar);
                 foreach(AutomationElement item in root.FindAll(TreeScope.Descendants,condition)){
                     var r=item.Cached.BoundingRectangle;
                     if(item.Cached.IsOffscreen||r.IsEmpty||r.Width<=0||r.Height<=0||r.Right<=bounds.Left||r.Left>=bounds.Right||r.Bottom<=bounds.Top||r.Top>=bounds.Bottom)continue;
                     result.Add(r);
                 }
             }
-            return new(bar,bounds,start,Environment.TickCount64,captureGeneration,result.ToArray());
-        }catch(Exception ex){DiagnosticLogger.Verbose("Taskbar UIA probe: "+ex.Message);return null;}
+            var controls=new Rect[result.Count];result.CopyTo(controls);return new(bar,bounds,start,Environment.TickCount64,captureGeneration,controls);
+        }catch(Exception ex){DiagnosticLogger.Verbose("Taskbar UIA probe: "+ex.Message);return null;}finally{Interlocked.Add(ref totalMs,Environment.TickCount64-start);}
     }
 }

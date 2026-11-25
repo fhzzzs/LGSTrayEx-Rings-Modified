@@ -2,9 +2,36 @@
 param(
   [ValidateRange(1,168)][int]$Hours=168,
   [ValidateRange(5,3600)][int]$IntervalSeconds=60,
+  [string]$AnalyzeCsv,
   [string]$Output=(Join-Path (Get-Location) ("battery-monitor-performance-"+(Get-Date -Format yyyyMMdd-HHmmss)+".csv"))
 )
 $ErrorActionPreference='Stop'
+if($AnalyzeCsv){
+    $data=Import-Csv -LiteralPath $AnalyzeCsv | Where-Object {$_.Status -eq 'running' -and $_.PID}
+    $summary=foreach($group in ($data | Group-Object Process,PID,StartUTC)){
+        $rows=@($group.Group | Sort-Object {[DateTimeOffset]::Parse($_.UTC)})
+        if($rows.Count -lt 2){continue}
+        $first=$rows[0];$last=$rows[-1]
+        $elapsed=([DateTimeOffset]::Parse($last.UTC)-[DateTimeOffset]::Parse($first.UTC)).TotalSeconds
+        if($elapsed -le 0){continue}
+        $warmup=@($rows | Where-Object {([DateTimeOffset]::Parse($_.UTC)-[DateTimeOffset]::Parse($first.UTC)).TotalMinutes -ge 5})
+        if($warmup.Count -ge 2){$first=$warmup[0];$elapsed=([DateTimeOffset]::Parse($last.UTC)-[DateTimeOffset]::Parse($first.UTC)).TotalSeconds}
+        if($elapsed -le 0){continue}
+        [pscustomobject]@{
+            Process=$last.Process; PID=$last.PID; Samples=$rows.Count; MeasuredHours=[math]::Round($elapsed/3600,2);
+            PrivateStartMiB=[double]$first.PrivateMiB; PrivateEndMiB=[double]$last.PrivateMiB;
+            PrivateDeltaMiB=[math]::Round(([double]$last.PrivateMiB-[double]$first.PrivateMiB),2);
+            WorkingSetPeakMiB=($rows | ForEach-Object {[double]$_.WorkingSetMiB} | Measure-Object -Maximum).Maximum;
+            ThreadDelta=[int]$last.Threads-[int]$first.Threads; HandleDelta=[int]$last.Handles-[int]$first.Handles;
+            GDIDelta=[int]$last.GDI-[int]$first.GDI; USERDelta=[int]$last.USER-[int]$first.USER;
+            AverageMachineCPUPercent=[math]::Round(100*([double]$last.CPUSeconds-[double]$first.CPUSeconds)/($elapsed*[Environment]::ProcessorCount),3);
+        }
+    }
+    $summary | Format-Table -AutoSize
+    Write-Host "Changes are measurements, not proof of leaks. Compare identical hardware/modes and elapsed durations."
+    return
+}
+
 if(-not ('BatteryMonitorMetrics' -as [type])) {
 Add-Type @'
 using System;

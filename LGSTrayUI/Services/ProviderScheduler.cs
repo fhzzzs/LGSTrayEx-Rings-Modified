@@ -33,7 +33,7 @@ internal sealed class ProviderScheduler:IDisposable
         internal DateTimeOffset Next;
         internal CancellationTokenSource? Flight;
         internal int Generation,Failures,StablePolls;
-        internal bool Enabled;
+        internal bool Enabled,EverEnabled;
         internal double LastMs;
         internal DateTimeOffset Updated;
         internal string? Error;
@@ -41,7 +41,9 @@ internal sealed class ProviderScheduler:IDisposable
     private readonly Slot[] slots;
     private readonly DispatcherTimer timer;
     private readonly Action changed;
-    private bool disposed;
+    private bool disposed,suspended;
+    private readonly long created=Environment.TickCount64;
+    internal static int InitialDelayMs(string id)=>id switch{"asus"=>750,"astro"=>1500,"controller-hid"=>2250,"ble"=>500,_=>0};
     internal static TimeSpan NextDelay(TimeSpan period,int failures,bool online)
     {
         double seconds=Math.Clamp(period.TotalSeconds,.25,120);
@@ -62,12 +64,17 @@ internal sealed class ProviderScheduler:IDisposable
         foreach(var s in slots.Where(s=>id==null||s.Provider.Id==id)){s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}
         Poll();
     }
+    internal void RescanMany(params string[] ids){foreach(var s in slots)if(ids.Contains(s.Provider.Id)){s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}Poll();}
+    internal void Suspend(){if(disposed||suspended)return;suspended=true;timer.Stop();foreach(var s in slots){s.Generation++;s.StablePolls=0;s.Flight?.Cancel();}}
+    internal void Resume(){if(disposed)return;suspended=false;var now=DateTimeOffset.UtcNow;bool invalidated=false;foreach(var s in slots){s.Generation++;s.StablePolls=0;s.Next=now.AddMilliseconds(InitialDelayMs(s.Provider.Id));s.Flight?.Cancel();if(s.Rows.Any(r=>r.IsConnected)){s.Rows=s.Rows.Select(InvalidateForResume).ToArray();invalidated=true;}}if(invalidated)changed();timer.Start();Poll();}
+    internal static TaskbarBattery InvalidateForResume(TaskbarBattery r)=>r.IsConnected?r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}:r;
     internal void Poll()
     {
-        if(disposed)return;var c=RingConfig.Current;var now=DateTimeOffset.UtcNow;
+        if(disposed||suspended)return;var c=RingConfig.Current;var now=DateTimeOffset.UtcNow;
         foreach(var s in slots){
             bool enabled=s.Provider.Enabled(c);
             if(enabled!=s.Enabled){s.Enabled=enabled;s.Generation++;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();
+                if(enabled&&!s.EverEnabled){s.EverEnabled=true;s.Next=now.AddMilliseconds(Math.Max(0,InitialDelayMs(s.Provider.Id)-(Environment.TickCount64-created)));}
                 if(!enabled&&s.Rows.Count>0){s.Rows=[];changed();}Publish(s);}
             if(enabled&&s.Flight==null&&now>=s.Next)_=Run(s);
         }
@@ -75,10 +82,10 @@ internal sealed class ProviderScheduler:IDisposable
         timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,2000));
     }
     internal static TimeSpan AdaptiveInterval(string id,TimeSpan period,int stablePolls)
-        => (id is "ble" or "asus")&&stablePolls>=3?TimeSpan.FromSeconds(Math.Min(120,period.TotalSeconds*2)):period;
+        => (id is "ble" or "asus" or "astro" or "controller-hid")&&stablePolls>=3?TimeSpan.FromSeconds(Math.Min(id=="controller-hid"?15:120,period.TotalSeconds*2)):period;
     internal static bool SameReadings(IReadOnlyList<TaskbarBattery> a,IReadOnlyList<TaskbarBattery> b){
         if(a.Count!=b.Count)return false;
-        for(int i=0;i<a.Count;i++)if((a[i] with{Updated=b[i].Updated})!=b[i])return false;
+        for(int i=0;i<a.Count;i++)if(!TaskbarBattery.SamePresentation(a[i],b[i]))return false;
         return true;
     }
     private async Task Run(Slot s)
@@ -106,7 +113,7 @@ internal sealed class ProviderScheduler:IDisposable
             // immediately but never start overlapping calls on that provider.
             if(lingering)try{await work!;}catch{}
             s.Flight=null;Publish(s);
-            if(!disposed)s.Next=generation!=s.Generation?DateTimeOffset.MinValue:DateTimeOffset.UtcNow+
+            if(!disposed&&generation==s.Generation)s.Next=DateTimeOffset.UtcNow+
                 NextDelay(AdaptiveInterval(s.Provider.Id,s.Provider.Interval(RingConfig.Current),s.StablePolls),s.Failures,s.Rows.Any(r=>r.IsConnected));
         }
     }
