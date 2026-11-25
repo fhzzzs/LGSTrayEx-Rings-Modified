@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using LGSTrayPrimitives;
 namespace LGSTrayUI;
 
-// Raw providers remain separate; exact identity and unique Logitech cross-provider model pairs
-// are grouped before rendering. Inferred model links remain reversible, not hardware proof.
+// Evidence-based grouping: exact hardware identity, explicit user links, and
+// conservative Logitech connection-mode families. No fixed number of sources.
 internal sealed record DeviceGroup(TaskbarBattery Reading, TaskbarBattery[] Sources, bool Ignored, bool Inferred=false);
 internal static class DeviceIdentityManager
 {
@@ -21,28 +22,31 @@ internal static class DeviceIdentityManager
         if(d.Type==DeviceType.Headset&&(n is "PROX2LIGHTSPEED" or "PROX2LIGHTSPEEDGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSGAMINGHEADSET" or "PROX2LIGHTSPEEDWIRELESSHEADSET"))return "PROX2LIGHTSPEED";
         return n;
     }
-    // A base G HUB model and its _ext1 variant can describe the wireless/USB
-    // modes of one unit. Never infer identity for two reporting G HUB records,
-    // multiple native units, distinct serials or arbitrary same-name devices.
+    // Model IDs such as GHUB.pro_x_2_wireless_mouse and _ext1/_ext2 are
+    // candidate connection-mode aliases, not proof that two active units are one.
     private static string? GHubModeFamily(TaskbarBattery d){
         if(LogitechProvider(d)!="GHub")return null;
         string id=d.Key.Split(':',5)[4];
         if(!id.StartsWith("GHUB.",StringComparison.OrdinalIgnoreCase))return null;
-        return id.EndsWith("_ext1",StringComparison.OrdinalIgnoreCase)?id[..^5]:id;
+        return Regex.Replace(id,@"_ext[0-9]+$","",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
     }
     private static bool CompatibleModelSources(TaskbarBattery[] rows){
         int native=rows.Count(d=>LogitechProvider(d)=="Native");
         var ghub=rows.Where(d=>LogitechProvider(d)=="GHub").ToArray();
-        if(native>1||ghub.Length<1||ghub.Length>2)return false;
-        if(rows.Select(d=>d.PhysicalId).Where(s=>!string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.Ordinal).Count()>1)return false;
+        if(native>1||ghub.Length<1)return false;
+        if(ConflictingHardware(rows))return false;
         if(ghub.Length==1)return native==1;
         var family=GHubModeFamily(ghub[0]);
-        if(family==null||!string.Equals(family,GHubModeFamily(ghub[1]),StringComparison.OrdinalIgnoreCase))return false;
-        string a=ghub[0].Key.Split(':',5)[4],b=ghub[1].Key.Split(':',5)[4];
-        if(string.Equals(a,b,StringComparison.OrdinalIgnoreCase))return false;
-        // A second source which has ever supplied a reading is not a phantom.
+        if(family==null||ghub.Any(d=>!string.Equals(family,GHubModeFamily(d),StringComparison.OrdinalIgnoreCase)))return false;
+        if(ghub.Select(d=>d.Key.Split(':',5)[4]).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=ghub.Length)return false;
+        // Unreported aliases may be attached in any quantity. Multiple independent
+        // reported histories remain ambiguous unless exact IDs/manual links prove identity.
         return ghub.Count(d=>d.Level.HasValue||d.Charging||d.Updated!=DateTimeOffset.MinValue)<=1;
     }
+    private static bool ConflictingHardware(IEnumerable<TaskbarBattery> rows)
+        =>rows.Select(d=>d.Type).Distinct().Skip(1).Any()||
+          rows.Select(d=>d.PhysicalId).Where(s=>!string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.Ordinal).Skip(1).Any();
+
     internal static DeviceGroup[] Group(IEnumerable<TaskbarBattery> readings,RingPreferences c){
         var raw=readings.GroupBy(d=>d.Key,StringComparer.Ordinal).Select(g=>Best(g,null)).ToArray();
         var byKey=raw.ToDictionary(d=>d.Key,StringComparer.Ordinal);
@@ -52,8 +56,19 @@ internal static class DeviceIdentityManager
                (a.Type!=b.Type||a.PhysicalId!=b.PhysicalId))c.AutomaticAliases.Remove(pair.Key);
         }
         var roots=raw.ToDictionary(d=>d.Key,d=>Resolve(c,d.Key),StringComparer.Ordinal);
+        // A persisted alias can point through an absent record. Validate whole
+        // components, not merely adjacent pairs, before reusing automatic links.
+        if(c.AutoDeduplicate){
+            var conflicts=raw.GroupBy(d=>roots[d.Key]).Where(ConflictingHardware).Select(g=>g.Key).ToHashSet(StringComparer.Ordinal);
+            if(conflicts.Count>0){
+                foreach(var key in c.AutomaticAliases.Keys.ToArray())
+                    if(conflicts.Contains(Resolve(c,key)))c.AutomaticAliases.Remove(key);
+                roots=raw.ToDictionary(d=>d.Key,d=>Resolve(c,d.Key),StringComparer.Ordinal);
+            }
+        }
         if(c.AutoDeduplicate){foreach(var set in raw.Where(d=>!string.IsNullOrWhiteSpace(d.PhysicalId)&&!c.SeparateDeviceSources.Contains(d.Key)).GroupBy(d=>(d.Type,d.PhysicalId))){
             var keys=set.Select(d=>roots[d.Key]).Distinct().ToArray();if(keys.Length<2)continue;
+            if(ConflictingHardware(raw.Where(d=>keys.Contains(roots[d.Key]))))continue;
             // Explicit user choices take priority; otherwise use persisted order then stable key.
             string root=keys.OrderByDescending(k=>c.DeviceAliases.ContainsValue(k)).ThenBy(k=>c.Order.IndexOf(k) is int n&&n>=0?n:int.MaxValue).ThenBy(k=>k,StringComparer.Ordinal).First();
             foreach(var key in roots.Keys.ToArray())if(keys.Contains(roots[key])){
@@ -75,6 +90,7 @@ internal static class DeviceIdentityManager
                 // Respect explicit links; only extend a group when every linked member
                 // belongs to this unambiguous model family. Do not merge two user groups.
                 if(roots.Any(p=>keys.Contains(p.Value)&&!memberKeys.Contains(p.Key)))continue;
+                if(ConflictingHardware(raw.Where(d=>keys.Contains(roots[d.Key]))))continue;
                 var explicitRoots=keys.Where(k=>c.DeviceAliases.ContainsValue(k)).ToArray();
                 if(explicitRoots.Length>1)continue;
                 var root=keys.OrderByDescending(k=>explicitRoots.Contains(k))

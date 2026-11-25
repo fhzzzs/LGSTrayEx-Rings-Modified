@@ -42,6 +42,7 @@ public partial class TaskbarBatteryWindow : Window
     private RingSettingsWindow? _settings;
     private readonly RingAlerts _alerts = new();
     private readonly GroupedConnectionTracker _connections = new(DateTimeOffset.UtcNow);
+    private readonly BatterySourceSelector _sourceSelector = new();
     private DeviceGroup[] _groups = [];
     private TaskbarBattery[] _rows = [];
 
@@ -119,7 +120,7 @@ public partial class TaskbarBatteryWindow : Window
             _remembered[key]=_remembered[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
         var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);
         int previousModelRoots=c.ModelGroupRoots.Count;
-        _groups=DeviceIdentityManager.Group(_remembered.Values,c);
+        _groups=_sourceSelector.Select(DeviceIdentityManager.Group(_remembered.Values,c),c,DateTimeOffset.UtcNow);
         if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)inventoryChanged=true;
         foreach(var group in _groups){
             var key=group.Reading.Key;
