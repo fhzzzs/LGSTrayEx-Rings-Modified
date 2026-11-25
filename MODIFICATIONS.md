@@ -63,3 +63,6 @@ Version policy: continue from 1.0.4 to 1.0.5, keep compatibility and performance
 
 ## v1.0.5 — live UI and GameSir runtime feedback
 Withdraw active Cyclone 2 queries; separate experimental passive reader; dual WGI diagnostics and legacy Gamepad preference; ON/N/A/reconnecting presentation; live device status/source updates and full-row advanced/source toggles; earlier UIA refresh and coalesced invalidations. Version unchanged.
+
+## v1.0.5 — G7 telemetry, ordering, full-charge and performance follow-up
+Passive G7 frame decoder and retained online diagnostic, Cyclone 2 no-write safety preserved; manual order overrides defaults; device palette header unified; native FULL selection and static full display; bounded UIA, state, settings, notification and shine work; allocation rate diagnostics. No version change. Physical 10A9 reading and resource measurements remain open.

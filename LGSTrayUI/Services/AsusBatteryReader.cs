@@ -212,14 +212,17 @@ internal static class AsusBatteryReader
         }finally{if(head!=0)hid_free_enumeration(head);}
         return rows;
     }
+    private static string gameSirDiagnostics="Not scanned; experimental passive reader disabled by default";
+    internal static string GameSirDiagnostics=>Volatile.Read(ref gameSirDiagnostics);
     internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirOnly=false){
-        var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);
+        var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);var notes=new List<string>();
         foreach(ushort vid in gameSirOnly?new ushort[]{0x3537}:new ushort[]{0x054C,0x057E,0x2DC8}){
             var head=hid_enumerate(vid,0);
             try{
                 for(var p=head;p!=0;){
                     token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
-                    if(!ControllerInputBattery.Supports(d.Vid,d.Pid)||(d.Vid==0x3537?d.UsagePage!=0xFFF0:d.UsagePage!=1||d.Usage is not (4 or 5)))continue;
+                    if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Vid:X4}:{d.Pid:X4} mi={d.Interface} page={d.UsagePage:X4}:{d.Usage:X4}");
+                    if(!ControllerInputBattery.Supports(d.Vid,d.Pid)||(d.Vid==0x3537?(ControllerIdentity.IsG7(d.Vid,d.Pid)?d.UsagePage<0xFF00:d.UsagePage!=0xFFF0):d.UsagePage!=1||d.Usage is not (4 or 5)))continue;
                     var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
                     var h=hid_open_path(path);if(h==0)continue;
                     try{
@@ -233,6 +236,7 @@ internal static class AsusBatteryReader
                         for(int i=0;i<3;i++){
                             token.ThrowIfCancellationRequested();
                             int n=hid_read_timeout(h,buffer,(nuint)buffer.Length,120);
+                            if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Pid:X4} read length={n}"+(n>0?$" report={buffer[0]:X2}":""));
                             if(n<=0)break;
                             bool? bluetooth=d.Bus==2?true:d.Bus==1?false:
                                 path.Contains("vid&",StringComparison.OrdinalIgnoreCase)||path.Contains("{00001124-0000-1000-8000-00805f9b34fb}",StringComparison.OrdinalIgnoreCase)?true:
@@ -248,6 +252,7 @@ internal static class AsusBatteryReader
                 }
             }finally{if(head!=0)hid_free_enumeration(head);}
         }
+        if(gameSirOnly)Volatile.Write(ref gameSirDiagnostics,notes.Count==0?"No GameSir HID collections":string.Join("; ",notes));
         return rows;
     }
     internal static IReadOnlyList<TaskbarBattery> Read()=>Read(CancellationToken.None);

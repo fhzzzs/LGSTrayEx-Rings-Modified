@@ -15,6 +15,8 @@ internal static class GipBatteryReader
     internal static int? ReportPercent(int? full,int? remaining,int? rate)
         =>full==1000&&remaining==1000&&rate==null?null:CapacityPercent(full,remaining);
     private static string diagnostics="not scanned";
+    private static string lastGameSir="No GameSir WGI reports captured in this session";
+    internal static string LastGameSir=>System.Threading.Volatile.Read(ref lastGameSir);
     internal static string Diagnostics=>System.Threading.Volatile.Read(ref diagnostics);
     internal static IEnumerable<TaskbarBattery> Read()
     {
@@ -59,6 +61,8 @@ internal static class GipBatteryReader
                 if(ControllerIdentity.RawControllerAllowed(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null);
         }catch(Exception ex){DiagnosticLogger.LogWarning("GIP: "+ex.Message);throw;}
         finally{
+            var gameSir=notes.FindAll(n=>n.StartsWith("3537:",StringComparison.Ordinal));
+            if(gameSir.Count>0){var value=string.Join("; ",gameSir);var old=System.Threading.Volatile.Read(ref lastGameSir);if(!old.EndsWith(value,StringComparison.Ordinal))System.Threading.Volatile.Write(ref lastGameSir,$"{DateTimeOffset.UtcNow:O} · {value}");}
             var summary=notes.Count==0?"No active controllers":string.Join("; ",notes);
             if(System.Threading.Interlocked.Exchange(ref diagnostics,summary)!=summary)DiagnosticLogger.Log("WGI battery reports: "+summary);
         }

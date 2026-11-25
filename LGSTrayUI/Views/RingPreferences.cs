@@ -64,7 +64,7 @@ internal sealed class RingPreferences
     public bool Hover {get;set;}=true;
     internal double Ms(double n)=>Animate?Math.Clamp(n,0,10000)/Math.Clamp(Speed,.5,2):0;
     internal static Color Ink(string s, string fallback="#FFFFFF") {try{return (Color)ColorConverter.ConvertFromString(s);}catch{return (Color)ColorConverter.ConvertFromString(fallback);}}
-    internal Color Accent(TaskbarBattery d){string band=d.Offline?"Offline":d.Charging?"Charging":d.Level is not int n?(d.ConnectionOnly?"Normal":"Offline"):n<CriticalAt?"Critical":n<LowAt?"Low":"Normal";string fallback=band switch{"Offline"=>Offline,"Charging"=>Charging,"Critical"=>Critical,"Low"=>Low,_=>Normal};if(band is not ("Offline" or "Charging") && DeviceColors.TryGetValue(d.Key,out var legacy))fallback=legacy;return Ink(DeviceInk(d.Key,band,fallback));}
+    internal Color Accent(TaskbarBattery d){string band=d.Offline?"Offline":d.IsFull?"Normal":d.IsActivelyCharging?"Charging":d.Level is not int n?(d.ConnectionOnly?"Normal":"Offline"):n<CriticalAt?"Critical":n<LowAt?"Low":"Normal";string fallback=band switch{"Offline"=>Offline,"Charging"=>Charging,"Critical"=>Critical,"Low"=>Low,_=>Normal};if(band is not ("Offline" or "Charging") && DeviceColors.TryGetValue(d.Key,out var legacy))fallback=legacy;return Ink(DeviceInk(d.Key,band,fallback));}
 }
 public sealed class AlertAudio {public string Sound {get;set;}="Soft Ding";public double Volume {get;set;}=65;}
 internal static class RingConfig

@@ -47,3 +47,5 @@ Second checkpoint: additional C# parser and safety regression tests are authored
 Third checkpoint prioritizes 22 and 30–35. Source changes and tests authored, no Windows build or hardware measurements. These seven remain open for their explicit validation gates; no version bump or release.
 
 Version-only correction: the previously tested 2.0.x labels are not official releases. Source functionality and outstanding physical validation gates are unchanged. Build 1.0.5 from this branch before any release.
+
+1.0.5 follow-up: G7 configuration telemetry parser added without active writes; 10A9 fast mode remains unverified. Cyclone 2 still passive-only and opt-in. Ordering and full-charge UI/selection code plus regression tests added. Shell, state, notification, rendering and allocation work reduced; remeasure against the user's 335.3 MiB working set / 192.8 MiB private / 11.35 GiB cumulative allocation over 1041s diagnostic. Hardware and benchmark acceptance pending.

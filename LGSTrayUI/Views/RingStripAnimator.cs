@@ -92,7 +92,7 @@ internal sealed class RingStripAnimator : IDisposable
             if(t>=1)Finish();
         });
     }
-    private IEnumerable<Entry> Sorted()=>entries.Values.OrderBy(e=>TaskbarBattery.Rank(e.Data.Type)).ThenBy(e=>RingConfig.Current.Order.IndexOf(e.Data.Key) is int i&&i>=0?i:int.MaxValue).ThenBy(e=>e.Data.Key,StringComparer.Ordinal);
+    private IEnumerable<Entry> Sorted()=>DeviceOrder.Sort(entries.Values,RingConfig.Current.Order,e=>e.Data);
     internal void Update(IEnumerable<TaskbarBattery> readings)
     {
         if(disposed)return;

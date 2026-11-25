@@ -31,7 +31,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
             new BatteryProvider("asus",c=>c.AsusHidEnabled,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(30),t=>Worker(()=>AsusBatteryReader.Read(t),t)),
             new BatteryProvider("astro",c=>c.UseAstro,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadAstro(t),t)),
             new BatteryProvider("controller-hid",c=>c.UseControllerHid,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t),t)),
-            new BatteryProvider("gamesir-hid",c=>c.UseControllerHid&&c.GameSirPassiveEnabled,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(10),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t,true),t))
+            new BatteryProvider("gamesir-hid",c=>c.UseControllerHid&&c.GameSirPassiveEnabled,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(10),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t,true),t))
         },dispatcher,()=>Changed?.Invoke());
         try{Gamepad.GamepadAdded+=GamepadChanged;try{Gamepad.GamepadRemoved+=GamepadChanged;eventsSubscribed=true;}catch{Gamepad.GamepadAdded-=GamepadChanged;}}
         catch(Exception ex){DiagnosticLogger.LogWarning("Gamepad change registration: "+ex.Message);}

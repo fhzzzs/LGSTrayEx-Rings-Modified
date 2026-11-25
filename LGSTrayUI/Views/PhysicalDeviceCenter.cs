@@ -14,12 +14,18 @@ internal sealed class PhysicalDeviceCenter
     private readonly BatterySourceSelector selector=new();
     private readonly GroupedConnectionTracker connections;
     private DeviceGroup[] rawGroups=[];
+    private TaskbarBattery[]? priorInput;
     internal PhysicalDeviceCenter(DateTimeOffset now){connections=new(now);}
+    internal bool HasPendingTransitions=>connections.HasPendingTransitions;
     internal void Suppress(DateTimeOffset now,TimeSpan duration)=>connections.Suppress(now,duration);
     internal void Regroup(RingPreferences c){rawGroups=PhysicalIdentityRegistry.Assign(DeviceIdentityManager.Group(Inventory.Values,c),c);}
-    internal bool RefreshInventory(IEnumerable<TaskbarBattery> readings,RingPreferences c)
+    internal void InvalidateInventory()=>priorInput=null;
+    internal bool RefreshInventory(IEnumerable<TaskbarBattery> readings,RingPreferences c,bool force=false)
     {
-        var current=readings.Select(ControllerIdentity.Normalize).GroupBy(d=>d.Key,StringComparer.Ordinal)
+        var input=readings as TaskbarBattery[]??readings.ToArray();
+        if(!force&&priorInput!=null&&priorInput.SequenceEqual(input))return false;
+        priorInput=input;
+        var current=input.Select(ControllerIdentity.Normalize).GroupBy(d=>d.Key,StringComparer.Ordinal)
             .ToDictionary(g=>g.Key,g=>DeviceIdentityManager.Best(g,null),StringComparer.Ordinal);
         bool changed=false;
         var migrated=new HashSet<string>(StringComparer.Ordinal);

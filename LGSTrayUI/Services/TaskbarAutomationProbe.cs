@@ -19,12 +19,14 @@ internal static class TaskbarAutomationProbe
     private static long generation;
     private static long retryAfter;
     private static int failures;
+    private static long lastAttempt;
+    internal const int CaptureIntervalMs=950,SnapshotLifetimeMs=1500;
     private static long captures,cacheHits,rejected,totalMs;
     internal static string Metrics=>$"captures={Interlocked.Read(ref captures)} cache hits={Interlocked.Read(ref cacheHits)} rejected={Interlocked.Read(ref rejected)} total capture ms={Interlocked.Read(ref totalMs)}";
     internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
     internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
     internal static bool Fresh(long now,long started,long completed)
-        =>completed>=started&&completed<=now&&now-started<=1500;
+        =>completed>=started&&completed<=now&&now-started<=SnapshotLifetimeMs;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
     {
         controls=[];
@@ -40,10 +42,11 @@ internal static class TaskbarAutomationProbe
             pending=null;
         }
         bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
-        // Keep the existing 1.5s safety freshness limit. Back off on failed
-        // UIA captures rather than continuously rebuilding cross-process trees.
-        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=650))
-            pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
+        // Keep the original 1.5 second freshness safety gate. Start fewer
+        // speculative captures and invalidate immediately on a shell change.
+        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=CaptureIntervalMs)&&now-lastAttempt>=250){
+            lastAttempt=now;pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
+        }
         if(!matching||last!.Controls.Length==0)return false;
         Interlocked.Increment(ref cacheHits);controls=last.Controls;return true;
     }

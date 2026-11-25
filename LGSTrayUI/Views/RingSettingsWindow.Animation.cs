@@ -21,7 +21,7 @@ internal sealed partial class RingSettingsWindow
     private void Schedule(double ms){demoTimer.Interval=TimeSpan.FromMilliseconds(Math.Max(100,ms));demoTimer.Start();}
     private void DemoTick(object? sender,EventArgs e){demoTimer.Stop();
         if(stage==3||stage==4){sample[0]=sample[0] with{Level=stage==3?5:85};UpdatePreview();status.Text="往返电量";stage=stage==3?4:2;Schedule(Math.Max(C.Ms(C.BatteryMs),C.Ms(C.ColorMs))+450);}
-        else if(stage==5){bool charging=demo!="uncharge";sample[0]=sample[0] with{Charging=charging,Status=demo=="fullcharge"?"已充满":charging?"充电中":"已连接",Level=demo=="fullcharge"?100:85};UpdatePreview();status.Text=demo=="fullcharge"?"已充满 · 静态闪电":charging?"正在充电 · 流光预览":"停止充电 · 恢复电量配色";if(looping&&demo!="charge"){stage=2;Schedule(1800);}}
+        else if(stage==5){bool charging=demo=="charge";sample[0]=sample[0] with{Charging=charging,Status=demo=="fullcharge"?"已充满":charging?"充电中":"已连接",Level=demo=="fullcharge"?100:85};UpdatePreview();status.Text=demo=="fullcharge"?"已充满 · 绿色静态圆环与对勾":charging?"正在充电 · 流光预览":"停止充电 · 恢复电量配色";if(looping&&demo!="charge"){stage=2;Schedule(1800);}}
         else if(stage==1&&demo!="out"){sample=Samples();UpdatePreview();status.Text="上线 · Fade In";stage=2;Schedule(C.Ms(C.InMs)+C.Ms(C.SpringMs)+3*C.Ms(C.StaggerMs)+300);}
         else if(looping){Play(demo);}else{status.Text="预览完成";}}
 }

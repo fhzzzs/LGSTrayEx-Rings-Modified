@@ -31,6 +31,7 @@ internal sealed class GroupedConnectionTracker
         var until=now+duration;
         if(until>suppressedUntil)suppressedUntil=until;
     }
+    internal bool HasPendingTransitions=>states.Values.Any(s=>s.Pending.HasValue||s.HeldDuringSuppression);
     internal bool IsSuppressed(DateTimeOffset now)=>now<suppressedUntil;
     private static bool Online(DeviceGroup g)=>g.Sources.Any(d=>d.IsConnected);
     internal ConnectionChange[] Observe(IEnumerable<DeviceGroup> groups,DateTimeOffset now)=>ObserveSnapshot(groups,now).Changes;

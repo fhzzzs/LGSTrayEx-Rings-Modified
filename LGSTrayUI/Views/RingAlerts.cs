@@ -16,11 +16,11 @@ internal sealed class RingAlerts
         if(!c.Alerts)history.Clear();
         foreach(var d in rows){
             if(!d.IsConnected||d.Stale||d.Level is not int n)continue;
-            bool isFull=n>=100&&(d.ChargeState is BatteryChargeState.Charging or BatteryChargeState.Full);
+            bool isFull=d.IsFull||n>=100&&d.IsActivelyCharging;
             if(full.TryGetValue(d.Key,out var wasFull)&&!wasFull&&isFull&&c.FullChargeAlerts&&allowed)
                 PrimaryNotificationPopup.Show(d.Name,"充电完成","#237344",TimeSpan.FromSeconds(c.NotificationSeconds),deviceKey:d.Key);
             full[d.Key]=isFull;
-            if(d.Charging||isFull){history.Remove(d.Key);muted.Remove(d.Key);continue;}
+            if(d.IsActivelyCharging||isFull){history.Remove(d.Key);muted.Remove(d.Key);continue;}
             if(!c.Alerts||!allowed||muted.Contains(d.Key)||deferred?.Contains(d.Key)==true)continue;
             var rules=Parse(c.DeviceRules.TryGetValue(d.Key,out var r)?r:c.Rules).OrderBy(x=>x.p);
             var rule=rules.FirstOrDefault(x=>n<=x.p);

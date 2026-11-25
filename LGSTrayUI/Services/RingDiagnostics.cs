@@ -44,6 +44,7 @@ internal static class RingDiagnostics
         }
         var gc=GC.GetGCMemoryInfo();
         b.AppendLine($"Managed heap: {gc.HeapSizeBytes/1048576d:F1} MiB · committed: {gc.TotalCommittedBytes/1048576d:F1} MiB · allocated since start: {GC.GetTotalAllocatedBytes(false)/1048576d:F1} MiB");
+        using(var current=Process.GetCurrentProcess()){double seconds=Math.Max(1,(now-current.StartTime.ToUniversalTime()).TotalSeconds);b.AppendLine($"Average process CPU (one core=100%): {current.TotalProcessorTime.TotalSeconds/seconds*100:F1}% · allocation rate: {GC.GetTotalAllocatedBytes(false)/1048576d/seconds:F2} MiB/s");}
         b.AppendLine($"GC collections: {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)} · pool threads: {System.Threading.ThreadPool.ThreadCount} · pending work: {System.Threading.ThreadPool.PendingWorkItemCount}");
         b.AppendLine("Shell UIA: "+TaskbarAutomationProbe.Metrics);
         foreach(var phase in startupPhases)b.AppendLine($"Startup phase {phase.Key}: {phase.Value} ms");
@@ -55,6 +56,8 @@ internal static class RingDiagnostics
             b.AppendLine($"  {p.Id}: {(p.Enabled?(p.Busy?"scanning":"idle"):"disabled")} · {p.Count} sources · last {p.LastMs:F0} ms · failures {p.Failures}"+(p.Error==null?"":" · "+p.Error));
         b.AppendLine("  ASUS OMNI: "+AsusBatteryReader.Diagnostics);
         b.AppendLine("  GIP battery: "+GipBatteryReader.Diagnostics);
+        b.AppendLine("  Last GameSir WGI: "+GipBatteryReader.LastGameSir);
+        b.AppendLine("  GameSir passive HID: "+AsusBatteryReader.GameSirDiagnostics);
         b.AppendLine();b.AppendLine("Hardware discovery (on demand):");b.AppendLine(HardwareInventory);
         b.AppendLine();b.AppendLine("Logical devices:");
         foreach(var g in groups){

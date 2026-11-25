@@ -4,9 +4,10 @@ using Xunit;
 namespace LGSTrayUI.Tests;
 public class GameSirPerformanceTests{
     [Theory][InlineData(0x10A9)][InlineData(0x105E)][InlineData(0x109C)]
-    public void G7KnownEditionUsesWgiAndNotCycloneProtocol(int pid){
+    public void G7KnownEditionUsesWgiAndRejectsEmptyNativeReport(int pid){
         Assert.Equal("GameSir G7 Pro",ControllerIdentity.KnownName(0x3537,(ushort)pid));
-        Assert.False(ControllerInputBattery.Supports(0x3537,(ushort)pid));
+        Assert.True(ControllerInputBattery.Supports(0x3537,(ushort)pid));
+        byte[] empty=new byte[64];Assert.Null(ControllerInputBattery.Decode(0x3537,(ushort)pid,empty,64));
     }
     [Fact]public void CycloneAcceptsOnlyLiveStateReports(){
         byte[] frame=new byte[64];frame[0]=0x12;frame[36]=77;frame[35]=1;
