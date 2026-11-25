@@ -27,7 +27,7 @@ internal sealed class TaskbarEventMonitor:IDisposable
             if(bar==0||GetAncestor(hwnd,2)!=bar&&hwnd!=bar)return;
         }
         if(queued)return;queued=true;
-        dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{queued=false;if(!disposed){TaskbarAutomationProbe.Invalidate();changed();}}));
+        dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{queued=false;if(!disposed){if(evt!=3)TaskbarAutomationProbe.Invalidate();changed();}}));
     }
     public void Dispose(){if(disposed)return;disposed=true;if(location!=0)UnhookWinEvent(location);if(foreground!=0)UnhookWinEvent(foreground);}
     private delegate void WinEvent(nint hook,uint evt,nint hwnd,int obj,int child,uint thread,uint time);

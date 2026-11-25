@@ -23,16 +23,15 @@ internal sealed class BatterySourceSelector
             retained.Add(root);
             var sources=group.Sources;
             var valid=sources.Where(Usable).ToArray();
-            var fresh=valid.Where(d=>Fresh(d,now)).ToArray();
-            var candidates=valid.Where(d=>SourceReading.Normalize(d,now).Quality==ReadingQuality.Exact).ToArray();
+            var candidates=valid.Where(d=>SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Exact).ToArray();
             TaskbarBattery? chosen=null;
             if(preferences.PreferredSources.TryGetValue(root,out var preferred))
                 chosen=candidates.FirstOrDefault(d=>d.Key==preferred);
             if(chosen==null&&selected.TryGetValue(root,out var previous))
                 chosen=candidates.FirstOrDefault(d=>d.Key==previous);
             chosen??=candidates.Length>0?DeviceIdentityManager.Best(candidates,null):
-                DeviceIdentityManager.Best(sources.Where(d=>d.IsConnected&&SourceReading.Normalize(d,now).Quality==ReadingQuality.Band).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
-            if(SourceReading.Normalize(chosen,now).Quality==ReadingQuality.Stale)
+                DeviceIdentityManager.Best(sources.Where(d=>d.IsConnected&&SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Band).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
+            if(SourceReading.Normalize(chosen,now,preferences).Quality==ReadingQuality.Stale)
                 chosen=chosen with{LastKnownLevel=chosen.Level,Level=null,ShortLabel=null,Stale=true,Charging=false};
             selected[root]=chosen.Key;
             // Preserve group identity/name and all individual source data.

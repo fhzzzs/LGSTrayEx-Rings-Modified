@@ -40,11 +40,12 @@ public partial class TaskbarBatteryWindow : Window
     private DeviceGroup[] _groups = [];
     private TaskbarBattery[] _rows = [];
 
-    public TaskbarBatteryWindow(NotifyIconViewModel tray)
+    internal TaskbarBatteryWindow(NotifyIconViewModel tray,DeviceScanCoordinator scanner)
     {
         _tray = tray;
         InitializeComponent();
-        _scanner=new DeviceScanCoordinator(Dispatcher,QueueRefresh);
+        _scanner=scanner;
+        _scanner.Changed+=QueueRefresh;
         _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement){PlacementReady=()=>_placementReady};
         RingConfig.AreasChanged += SettingsChanged;
         _handle = new WindowInteropHelper(this).EnsureHandle();
@@ -54,6 +55,7 @@ public partial class TaskbarBatteryWindow : Window
         foreach(var d in DeviceInventoryStore.Load(_knownPath))_remembered[d.Key]=d;
         WatchDevices();
         RefreshReadings();
+        RingConfig.CaptureBaseline();
         _positionTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
         _positionTimer.Tick += Reposition;
         _positionTimer.Start();
@@ -137,10 +139,13 @@ public partial class TaskbarBatteryWindow : Window
         _notifications.Observe(snapshot,DateTimeOffset.UtcNow);
     }
 
+    internal void PrepareResume(){if(_closed)return;_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.RequestRescan();TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
+
     private void Reposition(object? sender, EventArgs e)
     {
         if(_closed)return;
         // Placement no longer drives provider scans or the device state clock.
+        _positionTimer.Interval=TimeSpan.FromMilliseconds(_animator.Width<=0?2000:_placementReady?1000:250);
         if (_openMenu?.IsOpen == true) {
             return;
         }
@@ -208,7 +213,7 @@ public partial class TaskbarBatteryWindow : Window
         _closed = true;
         UnregisterHotKey(_handle,1001); HwndSource.FromHwnd(_handle)?.RemoveHook(HotkeyHook);
         RingConfig.AreasChanged -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
-        _scanner.Dispose();
+        _scanner.Changed-=QueueRefresh;
         _shellEvents.Dispose();_stateTimer.Stop();_stateTimer.Tick-=StateTick;
         _positionTimer.Stop();
         _positionTimer.Tick -= Reposition;

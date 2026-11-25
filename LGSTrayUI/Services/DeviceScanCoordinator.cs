@@ -16,10 +16,11 @@ internal sealed class DeviceScanCoordinator:IDisposable
     private readonly Dispatcher dispatcher;
     private readonly ProviderScheduler scheduler;
     private bool disposed,eventsSubscribed;
+    internal event Action? Changed;
     internal IEnumerable<TaskbarBattery> Readings=>scheduler.Readings;
     private static Task<IReadOnlyList<TaskbarBattery>> Worker(Func<IEnumerable<TaskbarBattery>> read,CancellationToken token)
         =>Task.Run<IReadOnlyList<TaskbarBattery>>(()=>read().ToArray(),token);
-    internal DeviceScanCoordinator(Dispatcher dispatcher,Action changed)
+    internal DeviceScanCoordinator(Dispatcher dispatcher)
     {
         this.dispatcher=dispatcher;
         scheduler=new ProviderScheduler(new IBatteryProvider[]{
@@ -27,7 +28,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
             new BatteryProvider("gip",c=>c.UseGip,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>Worker(GipBatteryReader.Read,t)),
             new BatteryProvider("xinput",c=>c.UseXInput,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>Worker(XInputBatteryReader.Read,t)),
             new BatteryProvider("asus",c=>true,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>Worker(AsusBatteryReader.Read,t))
-        },dispatcher,changed);
+        },dispatcher,()=>Changed?.Invoke());
         try{Gamepad.GamepadAdded+=GamepadChanged;try{Gamepad.GamepadRemoved+=GamepadChanged;eventsSubscribed=true;}catch{Gamepad.GamepadAdded-=GamepadChanged;}}
         catch(Exception ex){DiagnosticLogger.LogWarning("Gamepad change registration: "+ex.Message);}
     }

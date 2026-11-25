@@ -10,21 +10,43 @@ internal enum ConnectionState { Disconnected, Connecting, Connected, Reconnectin
 internal enum BatteryChargeState { Unknown, Discharging, Charging, Full }
 internal enum ReadingQuality { Unknown, Band, Exact, Stale }
 
-internal sealed record TaskbarBattery(DeviceType Type, string Name, int? Level, string Status,
-                                      bool Charging, DateTimeOffset Updated, string Key = "", string? ShortLabel = null, string? PhysicalId = null)
+internal sealed record TaskbarBattery
 {
-    public string Category => Type switch { DeviceType.Mouse => "鼠标", DeviceType.Headset => "耳机", DeviceType.Keyboard => "键盘", DeviceType.Gamepad => "手柄", _ => "设备" };
-    // Legacy provider text is normalized at the boundary; downstream decisions
-    // use typed state. The display string is retained for old previews/imports.
-    public ConnectionState Connection => Status switch {
-        "离线"=>ConnectionState.Disconnected,"等待连接"=>ConnectionState.Connecting,
-        "重新连接"=>ConnectionState.Reconnecting,_=>ConnectionState.Connected};
-    public BatteryChargeState ChargeState=>Offline?BatteryChargeState.Unknown:Status=="已充满"?BatteryChargeState.Full:
+    public DeviceType Type {get;init;}
+    public string Name {get;init;}
+    public int? Level {get;init;}
+    public bool Charging {get;init;}
+    public DateTimeOffset Updated {get;init;}
+    public string Key {get;init;}
+    public string? ShortLabel {get;init;}
+    public string? PhysicalId {get;init;}
+    private string detail="已连接";
+    private bool full;
+    public ConnectionState Connection {get;private init;}
+    public BatteryChargeState ChargeState=>Offline?BatteryChargeState.Unknown:full?BatteryChargeState.Full:
         Charging?BatteryChargeState.Charging:Level.HasValue?BatteryChargeState.Discharging:BatteryChargeState.Unknown;
-    public bool Offline => Connection==ConnectionState.Disconnected;
+    // Legacy readers and previews can still supply display strings. Normalize
+    // once on assignment; all lifecycle decisions read the enum, not the label.
+    public string Status {
+        get=>Connection switch {
+            ConnectionState.Disconnected=>"离线",ConnectionState.Connecting=>"等待连接",
+            ConnectionState.Reconnecting=>"重新连接",_=>Stale?"电量数据已过期":detail};
+        init {
+            Connection=value switch {"离线"=>ConnectionState.Disconnected,"等待连接"=>ConnectionState.Connecting,
+                "重新连接"=>ConnectionState.Reconnecting,_=>ConnectionState.Connected};
+            full=value=="已充满";detail=value;
+        }
+    }
+    public TaskbarBattery(DeviceType Type,string Name,int? Level,string Status,bool Charging,DateTimeOffset Updated,
+        string Key="",string? ShortLabel=null,string? PhysicalId=null)
+    {
+        this.Type=Type;this.Name=Name;this.Level=Level;this.Status=Status;this.Charging=Charging;this.Updated=Updated;
+        this.Key=Key;this.ShortLabel=ShortLabel;this.PhysicalId=PhysicalId;
+    }
+    public string Category => Type switch { DeviceType.Mouse => "鼠标", DeviceType.Headset => "耳机", DeviceType.Keyboard => "键盘", DeviceType.Gamepad => "手柄", _ => "设备" };
+    public bool Offline=>Connection==ConnectionState.Disconnected;
     public bool IsConnected=>Connection==ConnectionState.Connected;
-    public TaskbarBattery WithConnection(ConnectionState state)=>this with{Status=state switch{
-        ConnectionState.Disconnected=>"离线",ConnectionState.Connecting=>"等待连接",ConnectionState.Reconnecting=>"重新连接",_=>"已连接"}};
+    public TaskbarBattery WithConnection(ConnectionState state)=>this with{Connection=state};
     public bool Stale {get;init;}
     public int? LastKnownLevel {get;init;}
     public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?ReadingQuality.Exact:
@@ -32,7 +54,7 @@ internal sealed record TaskbarBattery(DeviceType Type, string Name, int? Level, 
     public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value ? $"{value}%" : "—");
     public int BarValue => Level ?? 0;
     public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";
-    public string UpdatedLabel => Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";
+    public string UpdatedLabel => Stale&&LastKnownLevel is int last ? $"历史电量 {last}% · {Updated.ToLocalTime():HH:mm}" : Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";
     public static int Rank(DeviceType type) => type switch { DeviceType.Mouse => 0, DeviceType.Headset => 1, DeviceType.Keyboard => 2, DeviceType.Gamepad => 3, _ => 4 };
     public static int ColorBand(int? level) => level switch { null => -1, < 10 => 0, < 20 => 1, _ => 2 };
     private static bool Valid(LogiDevice d) => d.BatteryPercentage is >= 0 and <= 100 && !d.IsWiredMode;

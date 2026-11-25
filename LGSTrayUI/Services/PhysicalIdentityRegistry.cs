@@ -12,6 +12,14 @@ internal static class PhysicalIdentityRegistry
     private static string NewId()=>"device:"+Guid.NewGuid().ToString("N");
     internal static DeviceGroup[] Assign(DeviceGroup[] groups,RingPreferences c)
     {
+        // If a provider reuses a source key for a serial-confirmed different
+        // unit, do not inherit the old unit's logical ID from that key.
+        foreach(var s in groups.SelectMany(g=>g.Sources).Where(s=>!string.IsNullOrWhiteSpace(s.PhysicalId))){
+            string evidence=s.Type+":"+s.PhysicalId;
+            if(c.PhysicalSourceEvidence.TryGetValue(s.Key,out var old)&&old!=evidence)
+                c.PhysicalSourceIds.Remove(s.Key);
+            c.PhysicalSourceEvidence[s.Key]=evidence;
+        }
         var used=new HashSet<string>(StringComparer.Ordinal);
         var output=new List<DeviceGroup>();
         // Explicit primary choice wins; otherwise existing primary source wins.

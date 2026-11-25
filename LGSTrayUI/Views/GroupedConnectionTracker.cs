@@ -69,7 +69,7 @@ internal sealed class GroupedConnectionTracker
             }
             TaskbarBattery reading=g.Reading;
             if(state.Online&&!online&&state.Last!=null)
-                reading=state.Last.WithConnection(ConnectionState.Reconnecting) with{Key=key,Name=g.Reading.Name,Charging=false};
+                reading=state.Last.WithConnection(ConnectionState.Reconnecting) with{Key=key,Name=g.Reading.Name,LastKnownLevel=state.Last.Level??state.Last.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false};
             else if(!state.Online&&online)
                 reading=g.Reading.WithConnection(ConnectionState.Disconnected) with{Level=null,Charging=false,ShortLabel=null};
             if(state.Online&&online)state.Last=g.Reading;
