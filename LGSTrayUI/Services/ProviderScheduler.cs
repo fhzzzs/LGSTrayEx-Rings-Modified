@@ -72,7 +72,7 @@ internal sealed class ProviderScheduler:IDisposable
             if(enabled&&s.Flight==null&&now>=s.Next)_=Run(s);
         }
         var next=slots.Where(s=>s.Enabled&&s.Flight==null).Select(s=>(s.Next-now).TotalMilliseconds).DefaultIfEmpty(1000).Min();
-        timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,1000));
+        timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,2000));
     }
     private async Task Run(Slot s)
     {

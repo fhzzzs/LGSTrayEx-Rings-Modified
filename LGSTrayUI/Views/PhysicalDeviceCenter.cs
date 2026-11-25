@@ -19,7 +19,7 @@ internal sealed class PhysicalDeviceCenter
     internal void Regroup(RingPreferences c){rawGroups=PhysicalIdentityRegistry.Assign(DeviceIdentityManager.Group(Inventory.Values,c),c);}
     internal bool RefreshInventory(IEnumerable<TaskbarBattery> readings,RingPreferences c)
     {
-        var current=readings.GroupBy(d=>d.Key,StringComparer.Ordinal)
+        var current=readings.Select(ControllerIdentity.Normalize).GroupBy(d=>d.Key,StringComparer.Ordinal)
             .ToDictionary(g=>g.Key,g=>DeviceIdentityManager.Best(g,null),StringComparer.Ordinal);
         bool changed=false;
         var migrated=new HashSet<string>(StringComparer.Ordinal);

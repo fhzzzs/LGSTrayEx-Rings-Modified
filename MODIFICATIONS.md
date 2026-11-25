@@ -40,3 +40,6 @@ Modified by fhzzzs (https://github.com/fhzzzs). Charging ring effects, drag reor
 
 ## v1.0.3 — public branding and direct ZIP
 Public product and executable names are Battery Monitor. Original upstream credits, license, internal assembly identities and the existing settings directory remain intact.
+
+## v1.0.4 — device identity and performance
+Normalize embedded NUL characters in controller IDs and stored identity keys; verify complete clipboard text. For observed GameSir G7 Pro 3537:10A9, use the raw Windows Gaming Input battery report, with XInput fallback. Reversible single-model history grouping is disabled after simultaneous same-model devices are observed; no serial identity is fabricated. Cache animation-frame snapshots and drawing pens, reduce unnecessary device subscriptions and grouping comparisons, defer initial shell placement until after dispatcher startup. Real hardware readings and long-running performance remain to be measured.

@@ -14,7 +14,7 @@ internal static class ControllerAliasMatcher
     internal static bool IsXInput(TaskbarBattery d)=>d.Type==DeviceType.Gamepad&&d.Key.StartsWith("xinput:",StringComparison.Ordinal);
     private static bool Xbox360(TaskbarBattery d)=>IsGip(d)&&string.Equals(d.Name.Trim(),"Xbox 360 Controller for Windows",StringComparison.OrdinalIgnoreCase);
     private static bool GenericXbox(TaskbarBattery d)=>IsGip(d)&&(string.Equals(d.Name.Trim(),"HID-compliant game controller",StringComparison.OrdinalIgnoreCase)||string.Equals(d.Name.Trim(),"Xbox Wireless Controller",StringComparison.OrdinalIgnoreCase));
-    private static bool SupportedPair(TaskbarBattery g,TaskbarBattery x)=>Xbox360(g)&&(x.ShortLabel=="USB"||x.ShortLabel=="—")||GenericXbox(g)&&(x.ShortLabel=="USB"||x.ShortLabel=="—");
+    private static bool SupportedPair(TaskbarBattery g,TaskbarBattery x)=>ControllerIdentity.IsG7(g)||(Xbox360(g)||GenericXbox(g))&&(x.ShortLabel=="USB"||x.ShortLabel=="—");
 
     internal static bool IsXboxBle(TaskbarBattery d)=>d.Type==DeviceType.Gamepad&&d.Key.StartsWith("ble:",StringComparison.Ordinal)&&d.Name.Equals("Xbox Wireless Controller",StringComparison.OrdinalIgnoreCase)&&!string.IsNullOrWhiteSpace(d.PhysicalId);
     internal static void Apply(TaskbarBattery[] raw,RingPreferences c,Dictionary<string,string> roots,HashSet<string> inferred)
@@ -25,7 +25,7 @@ internal static class ControllerAliasMatcher
         var activeGip=gip.Where(d=>d.IsConnected).ToArray();
         var activeSlots=slots.Where(d=>d.IsConnected).ToArray();
         bool CanPair(TaskbarBattery g,TaskbarBattery x)
-            =>(Xbox360(g)||GenericXbox(g))&&!c.SeparateDeviceSources.Contains(g.Key)&&!c.SeparateDeviceSources.Contains(x.Key)
+            => (Xbox360(g)||GenericXbox(g)||ControllerIdentity.IsG7(g))&&!c.SeparateDeviceSources.Contains(g.Key)&&!c.SeparateDeviceSources.Contains(x.Key)
                 &&roots[g.Key]==g.Key&&roots[x.Key]==x.Key
                 &&!c.DeviceAliases.ContainsKey(g.Key)&&!c.DeviceAliases.ContainsKey(x.Key)
                 &&!roots.Any(p=>p.Key!=x.Key&&p.Value==x.Key)
@@ -37,7 +37,7 @@ internal static class ControllerAliasMatcher
         }
         if(activeGip.Length==1&&activeSlots.Length==1){
             var g=activeGip[0];var x=activeSlots[0];
-            if(SupportedPair(g,x)&&g.Level is >=0 and <=100&&CanPair(g,x)){
+            if(SupportedPair(g,x)&&(ControllerIdentity.IsG7(g)||g.Level is >=0 and <=100)&&CanPair(g,x)){
                 Pair(g,x);
                 // Only used to keep an inactive historical placeholder attached.
                 // A live slot must always be checked anew.
@@ -49,6 +49,22 @@ internal static class ControllerAliasMatcher
             var g=gip.FirstOrDefault(d=>d.Key==key);
             if(g!=null&&CanPair(g,x))Pair(g,x);
         }
+        // A model-based history is only a reversible display hint, not serial proof.
+        // Once two instances are seen concurrently, never guess for this model again.
+        const string g7Hint="model:3537:10A9";
+        var g7=gip.Where(ControllerIdentity.IsG7).ToArray();
+        if(g7.Count(d=>d.IsConnected)>1)c.ControllerHistoryHints[g7Hint]="ambiguous";
+        if(g7.Length>1&&c.ControllerHistoryHints.GetValueOrDefault(g7Hint)!="ambiguous"&&
+           g7.Count(d=>d.IsConnected)<=1&&g7.Select(d=>d.PhysicalId).Where(v=>!string.IsNullOrWhiteSpace(v)).Distinct().Count()<=1&&
+           g7.All(d=>roots[d.Key]==d.Key&&!c.SeparateDeviceSources.Contains(d.Key)&&!c.DeviceAliases.ContainsKey(d.Key))){
+            string root=c.ControllerHistoryHints.GetValueOrDefault(g7Hint)??"";
+            if(!g7.Any(d=>d.Key==root))root=g7.OrderByDescending(d=>c.PhysicalSourceIds.ContainsKey(d.Key)).ThenBy(d=>d.Updated).ThenBy(d=>d.Key,StringComparer.Ordinal).First().Key;
+            c.ControllerHistoryHints[g7Hint]=root;
+            var members=g7.Select(d=>d.Key).ToHashSet(StringComparer.Ordinal);
+            foreach(var key in roots.Where(p=>members.Contains(p.Value)).Select(p=>p.Key).ToArray())roots[key]=root;
+            foreach(var old in members)inferred.Remove(old);
+            inferred.Add(root);
+        }else if(g7.Length==1&&!c.ControllerHistoryHints.ContainsKey(g7Hint))c.ControllerHistoryHints[g7Hint]=g7[0].Key;
         // A unique Microsoft WGI controller and a unique connected Xbox BLE
         // identity can provisionally share one display. VID is not a serial;
         // never guess when multiple candidates exist or explicit links conflict.

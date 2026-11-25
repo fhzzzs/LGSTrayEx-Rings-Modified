@@ -42,6 +42,7 @@ internal static class RingSettingsStore
         c.Size=Math.Clamp(c.Size,24,52);c.Gap=Math.Clamp(c.Gap,0,20);
         c.WaitMs=Math.Clamp(c.WaitMs,0,10000);c.StaggerMs=Math.Clamp(c.StaggerMs,0,250);
         c.ChargePeriod=Math.Clamp(c.ChargePeriod,250,10000);
+        ControllerIdentity.Migrate(c);
         c.SchemaVersion=Version;
         c.NotificationWidth=Math.Clamp(c.NotificationWidth,240,420);c.NotificationSeconds=Math.Clamp(c.NotificationSeconds,2,15);
         c.NotificationOpacity=Math.Clamp(c.NotificationOpacity,60,100);

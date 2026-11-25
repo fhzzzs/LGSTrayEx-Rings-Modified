@@ -12,18 +12,19 @@ internal static class RingFrameClock
 {
     private static readonly Stopwatch watch=Stopwatch.StartNew();
     private static readonly Dictionary<object,Action<double>> frames=new();
+    private static KeyValuePair<object,Action<double>>[]? frameSnapshot;
     internal static double Now=>watch.Elapsed.TotalMilliseconds;
     internal static int ActiveCount=>frames.Count;
     internal static void Set(object key,Action<double> frame){
-        bool empty=frames.Count==0;frames[key]=frame;
+        bool empty=frames.Count==0;frames[key]=frame;frameSnapshot=null;
         if(empty)CompositionTarget.Rendering+=Render;
     }
     internal static void Remove(object key){
-        if(frames.Remove(key)&&frames.Count==0)CompositionTarget.Rendering-=Render;
+        if(frames.Remove(key)){frameSnapshot=null;if(frames.Count==0)CompositionTarget.Rendering-=Render;}
     }
     private static void Render(object? sender,EventArgs e){
         double now=Now;
-        foreach(var pair in frames.ToArray())
+        foreach(var pair in (frameSnapshot??=frames.ToArray()))
             if(frames.TryGetValue(pair.Key,out var current)&&ReferenceEquals(current,pair.Value))current(now);
     }
     internal static double Progress(double now,double start,double duration)=>duration<=0?1:Math.Clamp((now-start)/duration,0,1);

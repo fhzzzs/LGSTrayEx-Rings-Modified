@@ -17,7 +17,7 @@ internal static class DeviceInventoryStore
             try{
                 return (JsonSerializer.Deserialize<KnownDevice[]>(File.ReadAllText(file))??throw new FormatException("Null device inventory"))
                     .Where(x=>x!=null&&!string.IsNullOrWhiteSpace(x.Key)&&TaskbarBattery.Rank(x.Type)<4)
-                    .Select(x=>new TaskbarBattery(x.Type,x.Name??x.Key,null,"离线",false,x.Updated,x.Key,PhysicalId:x.PhysicalId){HardwareVendorId=x.HardwareVendorId,HardwareProductId=x.HardwareProductId}).ToArray();
+                    .Select(x=>new TaskbarBattery(x.Type,x.Name??x.Key,null,"离线",false,x.Updated,x.Key,PhysicalId:x.PhysicalId){HardwareVendorId=x.HardwareVendorId,HardwareProductId=x.HardwareProductId}).Select(ControllerIdentity.Normalize).Where(x=>!string.IsNullOrWhiteSpace(x.Key)).GroupBy(x=>x.Key,StringComparer.Ordinal).Select(g=>g.OrderByDescending(x=>x.Updated).First()).ToArray();
             }catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory: "+ex.Message);}
         }
         return [];

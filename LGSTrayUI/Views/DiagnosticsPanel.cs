@@ -25,7 +25,7 @@ internal sealed class DiagnosticsPanel:StackPanel
             Refresh();string snapshot=report.Text;
             for(int attempt=0;attempt<5;attempt++)try{
                 Clipboard.SetDataObject(snapshot,true);
-                if(Clipboard.GetText()==snapshot){status.Text=$"已完整复制 · {snapshot.Length} 字符";return;}
+                if(Clipboard.GetText(TextDataFormat.UnicodeText)==snapshot){status.Text=$"已完整复制 · {snapshot.Length} 字符";return;}
             }catch(ExternalException){await Task.Delay(80);}
             status.Text="剪贴板复制或校验失败，请使用导出 TXT。";
         }

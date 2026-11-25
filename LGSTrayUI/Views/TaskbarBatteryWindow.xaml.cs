@@ -63,7 +63,8 @@ public partial class TaskbarBatteryWindow : Window
         _stateTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(500)};
         _stateTimer.Tick+=StateTick;_stateTimer.Start();
         _shellEvents=new TaskbarEventMonitor(Dispatcher,UpdatePlacement);
-        Reposition(null, EventArgs.Empty);
+        // Let host initialization proceed before the first shell placement probe.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background,new Action(()=>{if(!_closed)Reposition(null,EventArgs.Empty);}));
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool RegisterHotKey(nint h,int id,uint mods,uint key);
@@ -84,11 +85,11 @@ public partial class TaskbarBatteryWindow : Window
 
     private void WatchDevices()
     {
-        foreach (var device in _watched)
-            device.PropertyChanged -= DeviceChanged;
-        _watched.Clear();
-        foreach (var device in _tray.LogiDevices)
-            if (_watched.Add(device)) device.PropertyChanged += DeviceChanged;
+        var current=_tray.LogiDevices.ToHashSet();
+        foreach(var device in _watched.Where(d=>!current.Contains(d)).ToArray()){
+            device.PropertyChanged-=DeviceChanged;_watched.Remove(device);
+        }
+        foreach(var device in current)if(_watched.Add(device))device.PropertyChanged+=DeviceChanged;
     }
 
     private void DeviceChanged(object? sender, PropertyChangedEventArgs e) => QueueRefresh();
@@ -129,11 +130,20 @@ public partial class TaskbarBatteryWindow : Window
         if(!_tray.RediscoverDevicesEnabled)_deviceCenter.Suppress(now,TimeSpan.FromSeconds(5));
         return _deviceCenter.Advance(RingConfig.Current,now);
     }
+    internal static bool SameGrouping(DeviceGroup[] left,DeviceGroup[] right){
+        if(left.Length!=right.Length)return false;
+        for(int i=0;i<left.Length;i++){
+            var a=left[i];var b=right[i];
+            if(a.Reading.Key!=b.Reading.Key||a.Ignored!=b.Ignored||a.Inferred!=b.Inferred||a.Sources.Length!=b.Sources.Length)return false;
+            for(int j=0;j<a.Sources.Length;j++)if(a.Sources[j].Key!=b.Sources[j].Key)return false;
+        }
+        return true;
+    }
     private void ApplySnapshot(PhysicalDeviceSnapshot snapshot,bool force=false)
     {
         var c=RingConfig.Current;
         bool changed=force||!_rows.SequenceEqual(snapshot.Rows);
-        bool groupingChanged=_groups.Length!=snapshot.Groups.Length||!_groups.Select(g=>(g.Reading.Key,g.Ignored,g.Inferred,string.Join(",",g.Sources.Select(d=>d.Key)))).SequenceEqual(snapshot.Groups.Select(g=>(g.Reading.Key,g.Ignored,g.Inferred,string.Join(",",g.Sources.Select(d=>d.Key)))));
+        bool groupingChanged=_settings!=null&&!SameGrouping(_groups,snapshot.Groups);
         _groups=snapshot.Groups;_rows=snapshot.Rows;RingDiagnostics.Observe(_groups);
         if(changed){
             _animator.Update(_rows);

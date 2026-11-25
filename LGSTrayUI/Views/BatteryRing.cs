@@ -16,6 +16,12 @@ public sealed class BatteryRing : FrameworkElement
     private double shinePeriod,shineStart;
     private (string Text,string Font,bool Bold,double Size,Color Color,double Dpi)? textKey;
     private FormattedText? cachedText;
+    private (Color Color,double Opacity,double Width)? trackKey;
+    private Pen? cachedTrack;
+    private (Color Hi,Color Mid,Color Lo,double Width,PenLineCap Cap)? gradientKey;
+    private Pen? cachedGradient;
+    private (Color Color,double Width)? outlineKey;
+    private Pen? cachedOutline;
     private readonly object shineKey=new();
     private readonly System.Collections.Generic.Dictionary<DependencyProperty,object> channels=new();
     internal RingPreferences? Preferences {get;set;}
@@ -55,12 +61,12 @@ public sealed class BatteryRing : FrameworkElement
     protected override void OnRender(DrawingContext dc){base.OnRender(dc);if(DataContext is not TaskbarBattery d||ActualWidth<=0||ActualHeight<=0)return;var c=Settings;double s=Math.Min(ActualWidth,ActualHeight)/64;dc.PushTransform(new TranslateTransform((ActualWidth-64*s)/2,(ActualHeight-64*s)/2));dc.PushTransform(new ScaleTransform(s,s));
         // Transparent drawing provides the full rectangular hit target, including the lower half.
         dc.DrawRectangle(new SolidColorBrush(RingPreferences.Ink(c.Background,"#00000000")),null,new Rect(0,0,64,64));
-        double w=Math.Clamp(c.RingWidth,1,7),rad=28;var center=new Point(32,32);bool light=PreviewLight??RingPreferences.SystemLight();var track=new SolidColorBrush(RingPreferences.Ink(c.Foreground(d.Key,"Track",light))){Opacity=Math.Clamp(c.TrackOpacity/100,0,1)};dc.DrawEllipse(null,new Pen(track,w),center,rad,rad);
+        double w=Math.Clamp(c.RingWidth,1,7),rad=28;var center=new Point(32,32);bool light=PreviewLight??RingPreferences.SystemLight();var tk=(RingPreferences.Ink(c.Foreground(d.Key,"Track",light)),Math.Clamp(c.TrackOpacity/100,0,1),w);if(cachedTrack==null||trackKey!=tk){var track=new SolidColorBrush(tk.Item1){Opacity=tk.Item2};cachedTrack=new Pen(track,w);cachedTrack.Freeze();trackKey=tk;}dc.DrawEllipse(null,cachedTrack,center,rad,rad);
         var hi=Mix(Ink,Color.FromArgb(Ink.A,255,255,255),Math.Clamp(c.Gradient/100,0,1)*(1-Gray));var lo=Mix(Ink,Color.FromArgb(Ink.A,0,0,0),Math.Clamp(c.Gradient/400,0,.5)*(1-Gray));
-        var brush=new LinearGradientBrush(new GradientStopCollection{new(hi,0),new(Ink,.65),new(lo,1)},new Point(0,0),new Point(1,1));var cap=c.Rounded?PenLineCap.Round:PenLineCap.Flat;var pen=new Pen(brush,w){StartLineCap=cap,EndLineCap=cap};double level=Math.Clamp(Level,0,100);
+        var cap=c.Rounded?PenLineCap.Round:PenLineCap.Flat;var gk=(hi,Ink,lo,w,cap);if(cachedGradient==null||gradientKey!=gk){var brush=new LinearGradientBrush(new GradientStopCollection{new(hi,0),new(Ink,.65),new(lo,1)},new Point(0,0),new Point(1,1));cachedGradient=new Pen(brush,w){StartLineCap=cap,EndLineCap=cap};cachedGradient.Freeze();gradientKey=gk;}var pen=cachedGradient;double level=Math.Clamp(Level,0,100);
         if(level>=99.999)dc.DrawEllipse(null,pen,center,rad,rad);else if(level>0.001){double a=level*Math.PI/50;var geo=new StreamGeometry();using(var ctx=geo.Open()){ctx.BeginFigure(new Point(32,4),false,false);ctx.ArcTo(new Point(32+rad*Math.Sin(a),32-rad*Math.Cos(a)),new Size(rad,rad),0,level>50,SweepDirection.Clockwise,true,false);}dc.DrawGeometry(null,pen,geo);}
         if(shinePeriod>0&&d.Charging&&!d.Offline&&level>0&&level<100){var (start,end)=ShineSegment((double)GetValue(ShinePhaseProperty),level,c.ChargeLength);if(end-start>.01){var glow=new SolidColorBrush(RingPreferences.Ink(c.DeviceInk(d.Key,"ChargeHighlight",c.ChargeHighlight))){Opacity=Math.Clamp(c.ChargeBrightness/100,0,1)};dc.DrawGeometry(null,new Pen(glow,w*.85){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round},Arc(start,end,rad));}}
-        var muted=RingPreferences.Ink(c.DeviceInk(d.Key,"Offline",c.Offline));var icon=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Icon",light)),muted,Gray));var text=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Text",light)),muted,Gray));var outline=new Pen(icon,Math.Clamp(c.IconStroke,.5,4)){LineJoin=PenLineJoin.Round,StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};
+        var muted=RingPreferences.Ink(c.DeviceInk(d.Key,"Offline",c.Offline));var icon=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Icon",light)),muted,Gray));var text=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Text",light)),muted,Gray));var ok=(icon.Color,Math.Clamp(c.IconStroke,.5,4));if(cachedOutline==null||outlineKey!=ok){cachedOutline=new Pen(icon,ok.Item2){LineJoin=PenLineJoin.Round,StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};cachedOutline.Freeze();outlineKey=ok;}var outline=cachedOutline;
         dc.PushTransform(new TranslateTransform(c.IconX,c.IconY));dc.PushTransform(new ScaleTransform(c.IconScale/100,c.IconScale/100,32,21.5));dc.DrawGeometry(null,outline,Glyphs[Math.Clamp(TaskbarBattery.Rank(d.Type),0,3)]);dc.Pop();dc.Pop();
         string label=!d.Offline&&d.ShortLabel==null&&d.Level is >=0 and <=100?$"{Math.Round(level)}%":d.Percent;
         var key=(label,c.Font,c.Bold,Math.Clamp(c.FontSize,8,20),text.Color,VisualTreeHelper.GetDpi(this).PixelsPerDip);

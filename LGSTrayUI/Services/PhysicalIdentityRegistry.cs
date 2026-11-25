@@ -31,6 +31,8 @@ internal static class PhysicalIdentityRegistry
             bool provisionalController=g.Inferred&&root.StartsWith("gip:",StringComparison.Ordinal);
             bool provisionalBluetooth=g.Inferred&&root.StartsWith("ble:",StringComparison.Ordinal)&&g.Sources.Any(ControllerAliasMatcher.IsXboxBle);
             var identitySources=g.Sources.Where(s=>(!provisionalController||!ControllerAliasMatcher.IsXInput(s))&&(!provisionalBluetooth||(!ControllerAliasMatcher.IsXInput(s)&&!ControllerAliasMatcher.IsGip(s)))).ToArray();
+            // Do not store inferred G7 model aliases as confirmed physical IDs.
+            if(provisionalController&&g.Sources.Any(ControllerIdentity.IsG7))identitySources=identitySources.Where(s=>s.Key==root||!ControllerIdentity.IsG7(s)).ToArray();
             var candidates=identitySources.Select(s=>c.PhysicalSourceIds.GetValueOrDefault(s.Key))
                 .Where(s=>s!=null).Distinct().ToArray();
             var evidence=identitySources.Where(s=>!string.IsNullOrWhiteSpace(s.PhysicalId))

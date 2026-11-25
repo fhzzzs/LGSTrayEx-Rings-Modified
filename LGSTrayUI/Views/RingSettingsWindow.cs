@@ -67,9 +67,12 @@ internal sealed partial class RingSettingsWindow : Window
     private static TaskbarBattery[] Samples()=>new[]{DeviceType.Mouse,DeviceType.Headset,DeviceType.Keyboard,DeviceType.Gamepad}.Select((t,i)=>new TaskbarBattery(t,t.ToString(),new[]{85,65,15,8}[i],"已连接",false,DateTimeOffset.MinValue,"preview:"+i)).ToArray();
     private void Changed(){if(nav.SelectedIndex is 1 or 3){animator.RefreshLayout();largeAnimator.RefreshLayout();}if(nav.SelectedIndex==2)layoutPreview.Refresh();}
     internal void UpdateDevices(IEnumerable<TaskbarBattery> rows,DeviceGroup[] updatedGroups){
-        var old=devices.Select(d=>d.Key).ToArray();var oldGroups=groups.Select(g=>g.Reading.Key+":"+g.Ignored+":"+g.Inferred+":"+string.Join(",",g.Sources.Select(d=>d.Key))).ToArray();devices=rows.ToArray();groups=updatedGroups;
-        var newGroups=groups.Select(g=>g.Reading.Key+":"+g.Ignored+":"+g.Inferred+":"+string.Join(",",g.Sources.Select(d=>d.Key))).ToArray();
-        if(!dragging&&!building&&(nav.SelectedIndex is 1 or 4 or 5)&&(!old.SequenceEqual(devices.Select(d=>d.Key))||(nav.SelectedIndex==4&&!oldGroups.SequenceEqual(newGroups))))Build();
+        var next=rows as TaskbarBattery[]??rows.ToArray();
+        bool membershipChanged=devices.Length!=next.Length;
+        if(!membershipChanged)for(int i=0;i<devices.Length;i++)if(devices[i].Key!=next[i].Key){membershipChanged=true;break;}
+        bool groupingChanged=nav.SelectedIndex==4&&!TaskbarBatteryWindow.SameGrouping(groups,updatedGroups);
+        devices=next;groups=updatedGroups;
+        if(!dragging&&!building&&(nav.SelectedIndex is 1 or 4 or 5)&&(membershipChanged||groupingChanged))Build();
     }
     private static TextBlock Label(string s)=>new(){Text=s,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,4,0,4)};
     private static Button Btn(string text,Action a){var b=new Button{Content=text,Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,3,5,3)};b.Click+=(_,_)=>a();return b;}

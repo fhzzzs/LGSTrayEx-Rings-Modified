@@ -73,7 +73,7 @@ These are implemented reading paths, not a list of devices certified by physical
 | Compatible controllers | Windows Gaming Input / GIP | Reported battery capacity where available |
 | XInput controllers | XInput fallback | May report coarse levels instead of exact percentages |
 
-GameSir G7 Pro and other specific controllers still need hardware validation. Battery accuracy, charging status and connection-mode support depend on the hardware and drivers.
+GameSir G7 Pro (observed VID:PID 3537:10A9) is named explicitly; its raw Windows Gaming Input battery report is preferred, with XInput as fallback. Exact live readings and reconnection behavior still need validation on the connected unit. Other specific controllers also require hardware validation. Battery accuracy, charging status and connection-mode support depend on the hardware and drivers.
 
 Automatic device merging is enabled by default. Confirmed hardware identifiers take priority. A unique Logitech HID / G HUB pair with the same canonical model may also be grouped reversibly when there are no conflicting IDs or manual separation rules. Multiple records from either provider prevent inferred matching. Inferred links are not saved as confirmed hardware identity. Remembered offline records preserve grouping during rescan. Manual merge and separate remain available.
 

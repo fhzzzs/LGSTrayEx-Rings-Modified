@@ -28,6 +28,7 @@ internal static class RingDiagnostics
         using(var p=Process.GetCurrentProcess()){
             b.AppendLine($"Working set: {p.WorkingSet64/1048576d:F1} MiB · Private: {p.PrivateMemorySize64/1048576d:F1} MiB · Threads: {p.Threads.Count} · Handles: {p.HandleCount}");
             b.AppendLine($"GDI objects: {GetGuiResources(p.Handle,0)} · USER objects: {GetGuiResources(p.Handle,1)} · CPU time: {p.TotalProcessorTime.TotalSeconds:F1}s");
+            b.AppendLine($"Uptime: {Math.Max(0,(now-p.StartTime.ToUniversalTime()).TotalSeconds):F0}s · Peak working set: {p.PeakWorkingSet64/1048576d:F1} MiB");
         }
         if(startupMs>=0)b.AppendLine($"Startup to host ready: {startupMs} ms");
         b.AppendLine($"Animation channels: {RingFrameClock.ActiveCount} · Devices: {groups.Length}");
@@ -36,6 +37,7 @@ internal static class RingDiagnostics
         foreach(var p in providers.Values.OrderBy(x=>x.Id))
             b.AppendLine($"  {p.Id}: {(p.Enabled?(p.Busy?"scanning":"idle"):"disabled")} · {p.Count} sources · last {p.LastMs:F0} ms · failures {p.Failures}"+(p.Error==null?"":" · "+p.Error));
         b.AppendLine("  ASUS OMNI: "+AsusBatteryReader.Diagnostics);
+        b.AppendLine("  GIP battery: "+GipBatteryReader.Diagnostics);
         b.AppendLine();b.AppendLine("Logical devices:");
         foreach(var g in groups){
             var r=g.Reading;
@@ -52,6 +54,6 @@ internal static class RingDiagnostics
         }
         b.AppendLine();
         b.AppendLine($"END OF REPORT · {groups.Length} logical devices · {groups.Sum(g=>g.Sources.Length)} sources");
-        return b.ToString();
+        return ControllerIdentity.Clean(b.ToString());
     }
 }
