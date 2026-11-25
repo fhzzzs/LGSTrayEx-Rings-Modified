@@ -289,6 +289,7 @@ public partial class App : Application
             }catch(TimeoutException){DiagnosticLogger.LogWarning("Host cleanup exceeded 1.5 seconds; finishing application exit");}
             catch(Exception ex){DiagnosticLogger.LogWarning("Host cleanup: "+ex.Message);}
         }
+        if(!await AsyncPreferenceWriter.Shared.FlushAsync(TimeSpan.FromMilliseconds(750)))DiagnosticLogger.LogWarning("Final preference write incomplete or failed");
         DiagnosticLogger.Log($"Exit total before shutdown: {watch.ElapsedMilliseconds} ms");
         Shutdown();
     }

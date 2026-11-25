@@ -38,6 +38,7 @@ internal sealed class RingStripAnimator : IDisposable
         internal DateTimeOffset? OfflineAt;
         internal bool Leaving,Pending=true;
         internal int Generation,FadeGeneration;
+        internal Action? FinishFade;
     }
     internal Func<double>? WaitOverride;
     internal Func<bool>? PlacementReady;
@@ -47,8 +48,8 @@ internal sealed class RingStripAnimator : IDisposable
     private readonly Func<Button> create;
     private readonly Action layout;
     private readonly Dictionary<string,Entry> entries=new();
-    private readonly DispatcherTimer timer,moveTimer;
-    private readonly System.Diagnostics.Stopwatch moveClock=new();
+    private readonly DispatcherTimer timer;
+    private readonly object moveKey=new();
     private string[] previous=[];
     private bool disposed;
     private double previousSize;
@@ -61,21 +62,35 @@ internal sealed class RingStripAnimator : IDisposable
         this.canvas=canvas;this.create=create;this.layout=layout;
         canvas.Children.Add(divider);
         timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(80)};timer.Tick+=Tick;
-        moveTimer=new DispatcherTimer(DispatcherPriority.Render){Interval=TimeSpan.FromMilliseconds(16)};
-        moveTimer.Tick+=(_,_)=>moveFrame?.Invoke();
+        canvas.IsVisibleChanged+=VisibilityChanged;
     }
-    private static void Fade(Entry entry,double to,double ms,Action? done=null,double delay=0)
+    private void VisibilityChanged(object sender,DependencyPropertyChangedEventArgs args){
+        if(canvas.IsVisible)return;
+        // Do not run animations for a hidden window/preview. Complete the
+        // current layout and pending fades deterministically.
+        finishMove?.Invoke();
+        foreach(var entry in entries.Values.ToArray())entry.FinishFade?.Invoke();
+    }
+    private Action? finishMove;
+    private void Fade(Entry entry,double to,double ms,Action? done=null,double delay=0)
     {
         int token=++entry.FadeGeneration;var b=entry.Button;
+        RingFrameClock.Remove(entry);entry.FinishFade=null;
         double from=b.Opacity;
-        b.BeginAnimation(UIElement.OpacityProperty,null);
-        b.Opacity=from;
-        if(ms<=0){b.Opacity=to;done?.Invoke();return;}
-        var a=new DoubleAnimation(from,to,TimeSpan.FromMilliseconds(ms)){
-            EasingFunction=new SineEase{EasingMode=EasingMode.EaseInOut},
-            BeginTime=TimeSpan.FromMilliseconds(Math.Max(0,delay)),FillBehavior=FillBehavior.HoldEnd};
-        a.Completed+=(_,_)=>{if(token!=entry.FadeGeneration)return;b.Opacity=to;b.BeginAnimation(UIElement.OpacityProperty,null);done?.Invoke();};
-        b.BeginAnimation(UIElement.OpacityProperty,a);
+        void Finish(){
+            if(token!=entry.FadeGeneration)return;
+            RingFrameClock.Remove(entry);entry.FinishFade=null;
+            b.Opacity=to;done?.Invoke();
+        }
+        if(ms<=0||!canvas.IsVisible){Finish();return;}
+        double start=RingFrameClock.Now+Math.Max(0,delay);
+        entry.FinishFade=Finish;
+        RingFrameClock.Set(entry,now=>{
+            if(token!=entry.FadeGeneration){RingFrameClock.Remove(entry);return;}
+            double t=RingFrameClock.Progress(now,start,ms);
+            b.Opacity=from+(to-from)*RingFrameClock.Smooth(t);
+            if(t>=1)Finish();
+        });
     }
     private IEnumerable<Entry> Sorted()=>entries.Values.OrderBy(e=>RingConfig.Current.Order.IndexOf(e.Data.Key) is int i&&i>=0?i:int.MaxValue).ThenBy(e=>TaskbarBattery.Rank(e.Data.Type)).ThenBy(e=>e.Data.Key,StringComparer.Ordinal);
     internal void Update(IEnumerable<TaskbarBattery> readings)
@@ -110,7 +125,7 @@ internal sealed class RingStripAnimator : IDisposable
         if(!StaticPreview&&entries.Values.Any(e=>e.OfflineAt.HasValue&&(PreviewMode||c.AutoHide)))timer.Start();else timer.Stop();
     }
     internal void RefreshLayout()=>Reflow();
-    private void StopMove(){moveTimer.Stop();moveClock.Stop();moveFrame=null;}
+    private void StopMove(){RingFrameClock.Remove(moveKey);moveFrame=null;finishMove=null;}
     internal void Reset(){
         timer.Stop();StopMove();
         foreach(var key in entries.Keys.ToArray())Remove(key);
@@ -133,7 +148,7 @@ internal sealed class RingStripAnimator : IDisposable
     }
     private void Remove(string k){
         if(!entries.Remove(k,out var e))return;
-        e.Generation++;e.FadeGeneration++;e.Button.BeginAnimation(UIElement.OpacityProperty,null);canvas.Children.Remove(e.Button);
+        e.Generation++;e.FadeGeneration++;RingFrameClock.Remove(e);e.FinishFade=null;canvas.Children.Remove(e.Button);
     }
     private void Reflow()
     {
@@ -165,7 +180,7 @@ internal sealed class RingStripAnimator : IDisposable
         moves=moves.OrderBy(m=>m.to).ToList();
         bool safe=sameAxis&&RingMotionGeometry.CanInterpolate(moves.Select(m=>m.from).ToArray(),moves.Select(m=>m.to).ToArray(),size);
         double duration=SeedImmediately?0:c.Ms(c.SpringMs);
-        bool animate=safe&&duration>0&&moves.Any(m=>Math.Abs(m.from-m.to)>.01);
+        bool animate=canvas.IsVisible&&safe&&duration>0&&moves.Any(m=>Math.Abs(m.from-m.to)>.01);
         layout();
         void Finish(){
             StopMove();
@@ -177,18 +192,20 @@ internal sealed class RingStripAnimator : IDisposable
         // layout atomically instead of animating visible rings through one another.
         if(!animate){Finish();return;}
         IEasingFunction easing=c.Motion=="Spring"?new SpringEase{Bounce=c.Bounce/100,EasingMode=EasingMode.EaseIn}:c.Motion=="Quint"?new QuinticEase{EasingMode=EasingMode.EaseOut}:new SineEase{EasingMode=EasingMode.EaseInOut};
+        double started=RingFrameClock.Now;
+        finishMove=Finish;
         moveFrame=()=>{
-            double t=Math.Clamp(moveClock.Elapsed.TotalMilliseconds/duration,0,1);
+            double t=RingFrameClock.Progress(RingFrameClock.Now,started,duration);
             double progress=Math.Clamp(easing.Ease(t),0,1);
             foreach(var m in moves)m.e.Button.SetValue(prop,RingMotionGeometry.Position(m.from,m.to,progress));
             if(t>=1)Finish();
         };
-        moveClock.Restart();moveTimer.Start();
+        RingFrameClock.Set(moveKey,_=>moveFrame?.Invoke());
     }
     // Pending rings become visible only after the strip has a verified slot
     // and all existing visible rings have completed their movement.
     internal void ConfirmPlacement(){
-        if(disposed||moveTimer.IsEnabled||!(PlacementReady?.Invoke()??true))return;
+        if(disposed||moveFrame!=null||!(PlacementReady?.Invoke()??true))return;
         var c=RingConfig.Current;int index=0;
         foreach(var e in Sorted().Where(e=>e.Pending&&!e.Leaving)){
             e.Pending=false;int gen=++e.Generation;
@@ -196,7 +213,7 @@ internal sealed class RingStripAnimator : IDisposable
         }
     }
     public void Dispose(){
-        disposed=true;timer.Stop();StopMove();canvas.Children.Remove(divider);
+        disposed=true;canvas.IsVisibleChanged-=VisibilityChanged;timer.Stop();StopMove();canvas.Children.Remove(divider);
         foreach(var k in entries.Keys.ToArray())Remove(k);
     }
 }

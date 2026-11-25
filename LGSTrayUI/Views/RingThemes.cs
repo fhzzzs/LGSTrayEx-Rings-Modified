@@ -28,5 +28,5 @@ internal static class RingThemes
     internal static void ResetAppearance(){var defaults=new RingPreferences();var target=RingConfig.Current;var layoutAndMotion=new HashSet<string>{"DividerColor","DividerHeight","DividerWidth","Gap","LeftGap","RightGap","X","Y","Divider","Animate","Motion","Speed","GrayMs","WaitMs","OutMs","InMs","BatteryMs","ColorMs","SpringMs","StaggerMs","Bounce","ChargeAnimate","ChargePeriod","ChargeBrightness","ChargeLength"};foreach(var prop in Properties.Where(p=>!layoutAndMotion.Contains(p.Name)))prop.SetValue(target,prop.GetValue(defaults));}
     internal static void Save(string name,RingPreferences source){All[name]=Snapshot(source);Persist();}
     internal static void Delete(string name){All.Remove(name);Persist();}
-    private static void Persist()=>RingSettingsStore.WriteAtomic(Store,JsonSerializer.Serialize(All,new JsonSerializerOptions{WriteIndented=true}));
+    private static void Persist()=>AsyncPreferenceWriter.Shared.Enqueue(Store,JsonSerializer.Serialize(All,new JsonSerializerOptions{WriteIndented=true}));
 }

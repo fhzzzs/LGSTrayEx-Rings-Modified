@@ -76,7 +76,7 @@ internal static class RingConfig
     internal static void CaptureBaseline()=>previous=PreferenceFingerprint.Capture(Current);
     internal static void Notify(){var next=PreferenceFingerprint.Capture(Current);var areas=previous?.Diff(next)??PreferenceArea.All;previous=next;AreasChanged?.Invoke(areas);Changed?.Invoke();timer??=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(350)};timer.Stop();timer.Tick-=SaveTick;timer.Tick+=SaveTick;timer.Start();}
     private static void SaveTick(object? s,EventArgs e){timer?.Stop();Save();}
-    internal static void Save(){try{RingSettingsStore.Save(PathName,Current);previous=PreferenceFingerprint.Capture(Current);}catch(Exception ex){DiagnosticLogger.LogWarning("Ring settings: "+ex.Message);}}
+    internal static void Save(){try{AsyncPreferenceWriter.Shared.Enqueue(PathName,RingSettingsStore.Snapshot(Current));previous=PreferenceFingerprint.Capture(Current);}catch(Exception ex){DiagnosticLogger.LogWarning("Ring settings: "+ex.Message);}}
     internal static void Flush(){timer?.Stop();Save();}
     internal static void Export(string path)=>RingSettingsStore.Save(path,Current);
     internal static void Import(string path){Current=RingSettingsStore.Parse(File.ReadAllText(path));Notify();}

@@ -22,6 +22,7 @@ internal static class DeviceInventoryStore
         }
         return [];
     }
-    internal static void Save(string path,IEnumerable<TaskbarBattery> rows)
-        =>RingSettingsStore.WriteAtomic(path,JsonSerializer.Serialize(rows.Select(d=>new KnownDevice(d.Type,d.Name,d.Key,d.PhysicalId,d.Updated)).ToArray()));
+    internal static string Snapshot(IEnumerable<TaskbarBattery> rows)=>JsonSerializer.Serialize(rows.Select(d=>new KnownDevice(d.Type,d.Name,d.Key,d.PhysicalId,d.Updated)).ToArray());
+    internal static void Save(string path,IEnumerable<TaskbarBattery> rows)=>RingSettingsStore.WriteAtomic(path,Snapshot(rows));
+    internal static void QueueSave(string path,IEnumerable<TaskbarBattery> rows)=>AsyncPreferenceWriter.Shared.Enqueue(path,Snapshot(rows));
 }

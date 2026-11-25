@@ -117,7 +117,7 @@ public partial class TaskbarBatteryWindow : Window
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
     internal void ShowDevices(){ShowSettings();_settings?.OpenDevices();}
     private void ForgetKnown(string key){var group=_groups.FirstOrDefault(g=>g.Reading.Key==key);if(group==null||!group.Reading.Offline)return;var active=TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings).Select(d=>d.Key).ToHashSet();foreach(var d in group.Sources)if(!active.Contains(d.Key))_remembered.Remove(d.Key);SaveKnownDevices();QueueRefresh();}
-    private void SaveKnownDevices(){try{DeviceInventoryStore.Save(_knownPath,_remembered.Values);}catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory save: "+ex.Message);}}
+    private void SaveKnownDevices(){try{DeviceInventoryStore.QueueSave(_knownPath,_remembered.Values);}catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory save: "+ex.Message);}}
     private void PollExtraDevices()=>_scanner.Poll(DateTimeOffset.UtcNow);
 
     private PhysicalDeviceSnapshot ReadSnapshot()

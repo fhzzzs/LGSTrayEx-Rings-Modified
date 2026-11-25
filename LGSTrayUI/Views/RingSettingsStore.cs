@@ -45,11 +45,8 @@ internal static class RingSettingsStore
         }
         return new();
     }
-    internal static void Save(string path,RingPreferences c)
-    {
-        c.SchemaVersion=Version;
-        WriteAtomic(path,JsonSerializer.Serialize(c,Json));
-    }
+    internal static string Snapshot(RingPreferences c){c.SchemaVersion=Version;return JsonSerializer.Serialize(c,Json);}
+    internal static void Save(string path,RingPreferences c)=>WriteAtomic(path,Snapshot(c));
     internal static void WriteAtomic(string path,string json)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);

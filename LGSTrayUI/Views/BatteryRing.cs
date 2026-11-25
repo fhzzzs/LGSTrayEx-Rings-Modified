@@ -3,7 +3,6 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 namespace LGSTrayUI;
 public sealed class BatteryRing : FrameworkElement
 {
@@ -13,26 +12,42 @@ public sealed class BatteryRing : FrameworkElement
     private static readonly DependencyProperty GrayProperty=DependencyProperty.Register("Gray",typeof(double),typeof(BatteryRing),new FrameworkPropertyMetadata(0d,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly DependencyProperty ShinePhaseProperty=DependencyProperty.Register("ShinePhase",typeof(double),typeof(BatteryRing),new FrameworkPropertyMetadata(0d,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly Geometry Bolt=Geometry.Parse("M47,11 L42,20 H46 L44,27 L52,17 H48 L51,11 Z");
-    private double shinePeriod;
+    private double shinePeriod,shineStart;
+    private readonly object shineKey=new();
+    private readonly System.Collections.Generic.Dictionary<DependencyProperty,object> channels=new();
     internal RingPreferences? Preferences {get;set;}
     internal bool? PreviewLight {get;set;}
     private RingPreferences Settings=>Preferences??RingConfig.Current;
     private double Level=>(double)GetValue(LevelProperty); private Color Ink=>(Color)GetValue(InkProperty); private double Gray=>(double)GetValue(GrayProperty);
-    public BatteryRing(){Loaded+=(_,_)=>{RingConfig.Changed+=Recolor;Recolor();};Unloaded+=(_,_)=>{RingConfig.Changed-=Recolor;StopShine();};IsVisibleChanged+=(_,_)=>SyncShine();}
-    private void StopShine(){if(shinePeriod<=0)return;BeginAnimation(ShinePhaseProperty,null);shinePeriod=0;SetValue(ShinePhaseProperty,0d);}
-    private void SyncShine(){var c=Settings;if(!IsLoaded||!IsVisible||!c.Animate||!c.ChargeAnimate||DataContext is not TaskbarBattery d||d.Offline||!d.Charging||d.Level is not int n||n<=0||n>=100){StopShine();return;}double period=Math.Clamp(c.Ms(c.ChargePeriod),250,10000);if(Math.Abs(period-shinePeriod)<.01)return;StopShine();shinePeriod=period;BeginAnimation(ShinePhaseProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(period)){RepeatBehavior=RepeatBehavior.Forever});}
+    public BatteryRing(){Loaded+=(_,_)=>{RingConfig.Changed+=Recolor;Recolor();};Unloaded+=(_,_)=>{RingConfig.Changed-=Recolor;StopShine();StopChannels();};IsVisibleChanged+=(_,_)=>{if(!IsVisible)StopChannels();else if(DataContext is TaskbarBattery d){SetValue(LevelProperty,(double)(d.Level??0));SetValue(GrayProperty,d.Offline?1d:0d);SetValue(InkProperty,Settings.Accent(d));}SyncShine();};}
+    private void StopShine(){if(shinePeriod<=0)return;RingFrameClock.Remove(shineKey);shinePeriod=0;SetValue(ShinePhaseProperty,0d);}
+    private void SyncShine(){var c=Settings;if(!IsLoaded||!IsVisible||!c.Animate||!c.ChargeAnimate||DataContext is not TaskbarBattery d||d.Offline||!d.Charging||d.Level is not int n||n<=0||n>=100){StopShine();return;}double period=Math.Clamp(c.Ms(c.ChargePeriod),250,10000);if(Math.Abs(period-shinePeriod)<.01)return;StopShine();shinePeriod=period;shineStart=RingFrameClock.Now;RingFrameClock.Set(shineKey,now=>SetValue(ShinePhaseProperty,((now-shineStart)%shinePeriod)/shinePeriod));}
     internal static (double start,double end) ShineSegment(double phase,double level,double length){double extent=Math.Clamp(level,0,100)*3.6, span=Math.Clamp(length,1,60)/175.929*360;double head=Math.Clamp(phase,0,1)*(360+span);return(Math.Clamp(head-span,0,extent),Math.Clamp(head,0,extent));}
     private static Geometry Arc(double start,double end,double radius){double a=start*Math.PI/180,b=end*Math.PI/180;Point P(double t)=>new(32+radius*Math.Sin(t),32-radius*Math.Cos(t));var g=new StreamGeometry();using(var ctx=g.Open()){ctx.BeginFigure(P(a),false,false);ctx.ArcTo(P(b),new Size(radius,radius),0,end-start>180,SweepDirection.Clockwise,true,false);}return g;}
 
     internal static Brush Accent(TaskbarBattery d)=>new SolidColorBrush(RingConfig.Current.Accent(d));
     internal static readonly Brush Muted=Brushes.Gray;
-    private static IEasingFunction Ease()=>new SineEase{EasingMode=EasingMode.EaseInOut};
-    private void AnimateDouble(DependencyProperty prop,double to,double ms){double from=(double)GetValue(prop);BeginAnimation(prop,null);SetValue(prop,to);if(ms>0 && from!=to)BeginAnimation(prop,new DoubleAnimation(from,to,TimeSpan.FromMilliseconds(ms)){EasingFunction=Ease(),FillBehavior=FillBehavior.Stop});}
-    private void AnimateInk(Color to,double ms){var from=Ink;BeginAnimation(InkProperty,null);SetValue(InkProperty,to);if(ms>0&&from!=to)BeginAnimation(InkProperty,new ColorAnimation(from,to,TimeSpan.FromMilliseconds(ms)){EasingFunction=Ease(),FillBehavior=FillBehavior.Stop});}
+    private void StopChannels(){foreach(var key in channels.Values)RingFrameClock.Remove(key);channels.Clear();}
+    private void Transition(DependencyProperty prop,double ms,Action<double> apply){
+        if(channels.Remove(prop,out var old))RingFrameClock.Remove(old);
+        if(ms<=0||!IsLoaded||!IsVisible){apply(1);return;}
+        var key=new object();channels[prop]=key;double started=RingFrameClock.Now;
+        RingFrameClock.Set(key,now=>{
+            double t=RingFrameClock.Progress(now,started,ms);apply(RingFrameClock.Smooth(t));
+            if(t>=1){RingFrameClock.Remove(key);channels.Remove(prop);}
+        });
+    }
+    private void AnimateDouble(DependencyProperty prop,double to,double ms){
+        double from=(double)GetValue(prop);Transition(prop,from==to?0:ms,t=>SetValue(prop,from+(to-from)*t));
+    }
+    private void AnimateInk(Color to,double ms){
+        var from=Ink;Transition(InkProperty,from==to?0:ms,t=>SetValue(InkProperty,Mix(from,to,t)));
+    }
     private void Recolor(){if(DataContext is TaskbarBattery d){AnimateInk(Settings.Accent(d),0);SyncShine();InvalidateVisual();}}
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e){base.OnPropertyChanged(e);if(e.Property!=DataContextProperty||e.NewValue is not TaskbarBattery d)return;var old=e.OldValue as TaskbarBattery;var c=Settings;bool fresh=old?.Key!=d.Key;
-        if(!d.Offline)AnimateDouble(LevelProperty,d.Level??0,fresh?0:c.Ms(c.BatteryMs));
-        AnimateDouble(GrayProperty,d.Offline?1:0,fresh?0:c.Ms(c.GrayMs));AnimateInk(c.Accent(d),fresh?0:c.Ms(d.Offline?c.GrayMs:c.ColorMs));SyncShine();InvalidateVisual();}
+        if(!d.Offline&&(fresh||old?.Level!=d.Level||old?.Offline==true))AnimateDouble(LevelProperty,d.Level??0,fresh?0:c.Ms(c.BatteryMs));
+        if(fresh||old?.Offline!=d.Offline)AnimateDouble(GrayProperty,d.Offline?1:0,fresh?0:c.Ms(c.GrayMs));
+        if(fresh||old==null||c.Accent(old)!=c.Accent(d))AnimateInk(c.Accent(d),fresh?0:c.Ms(d.Offline?c.GrayMs:c.ColorMs));SyncShine();InvalidateVisual();}
     private static Color Mix(Color a,Color b,double t){t=Math.Clamp(t,0,1);byte M(byte x,byte y)=>(byte)Math.Round(x+(y-x)*t);return Color.FromArgb(M(a.A,b.A),M(a.R,b.R),M(a.G,b.G),M(a.B,b.B));}
     protected override void OnRender(DrawingContext dc){base.OnRender(dc);if(DataContext is not TaskbarBattery d||ActualWidth<=0||ActualHeight<=0)return;var c=Settings;double s=Math.Min(ActualWidth,ActualHeight)/64;dc.PushTransform(new TranslateTransform((ActualWidth-64*s)/2,(ActualHeight-64*s)/2));dc.PushTransform(new ScaleTransform(s,s));
         // Transparent drawing provides the full rectangular hit target, including the lower half.
