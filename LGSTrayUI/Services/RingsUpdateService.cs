@@ -21,7 +21,7 @@ internal static class RingsUpdateService
     private const string Repo="fhzzzs/LGSTrayEx-Rings-Modified";
     internal const string Asset="LGSTrayEx-Rings-Portable-x64.zip";
     private const long MaxDownload=350L*1024*1024,MaxExpanded=900L*1024*1024;
-    private static readonly string Versions=Path.Combine(AppDataPaths.LocalAppDataDir,"versions");
+    internal static readonly string Versions=Path.Combine(AppDataPaths.LocalAppDataDir,"versions");
     private static readonly string Previous=Path.Combine(AppDataPaths.LocalAppDataDir,"rings-previous-version.json");
     private static readonly HttpClient Http=new(){Timeout=Timeout.InfiniteTimeSpan};
     static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("LGSTrayEx-Rings-Update/11");}
@@ -95,6 +95,8 @@ internal static class RingsUpdateService
             }
             await Task.Run(()=>ExtractVerified(zip,temp,ct),ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
+            UpdateTransaction.PreserveConfiguration(AppContext.BaseDirectory,temp);
+            File.WriteAllText(Path.Combine(temp,UpdateTransaction.OwnershipMarker),release.Tag);
             Directory.Move(temp,destination);
             return Path.Combine(destination,"LGSTray.exe");
         }finally{

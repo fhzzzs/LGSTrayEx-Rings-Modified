@@ -47,7 +47,9 @@ internal sealed class ReleaseUpdatePanel:StackPanel
             var rollback=new Button{Content="回退到上一版本",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
             rollback.Click+=(_,_)=>Restart(previous);Children.Add(rollback);
         }
-        Children.Add(new TextBlock{Text="更新仅在手动确认后执行。原程序目录保留；个性化设置继续使用原用户数据目录。",TextWrapping=TextWrapping.Wrap,Opacity=.75,Margin=new Thickness(0,8,0,0)});
+        var cleanup=new Button{Content="清理旧版本（保留当前与上一版）",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+        cleanup.Click+=(_,_)=>{if(operation!=null)return;if(MessageBox.Show("删除超过7天且由更新器管理的旧版本？当前版本及上一版本保留。","Battery Monitor",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;try{int n=UpdateTransaction.CleanOldVersions(RingsUpdateService.Versions,PortableLayout.CurrentEntry,RingsUpdateService.PreviousExecutable(),DateTimeOffset.UtcNow);status.Text=$"已清理 {n} 个旧版本。";}catch(Exception ex){status.Text=ex.Message;}};Children.Add(cleanup);
+        Children.Add(new TextBlock{Text="更新仅在手动确认后执行。新版本启动失败可自动恢复上一版（支持新启动器的版本）；旧目录和个性化设置保留。",TextWrapping=TextWrapping.Wrap,Opacity=.75,Margin=new Thickness(0,8,0,0)});
         Unloaded+=(_,_)=>operation?.Cancel();
     }
     private void Restart(string executable){

@@ -195,6 +195,7 @@ public partial class App : Application
         try{
             _hostStart=host.StartAsync(_startupCancellation.Token);
             await _hostStart;
+            if(!_exitRequested)UpdateTransaction.MarkReady();
         }catch(OperationCanceledException) when(_exitRequested){}
         catch(Exception ex){DiagnosticLogger.LogError("Host start failed: "+ex.Message);RequestExit();}
     }
@@ -331,6 +332,8 @@ public partial class App : Application
         if(_restartExecutable is string executable)try{
             var start=new System.Diagnostics.ProcessStartInfo(executable){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(executable)!};
             start.ArgumentList.Add("--wait-parent="+Environment.ProcessId);
+            if(File.Exists(Path.Combine(Path.GetDirectoryName(executable)!,"app",UpdateTransaction.OwnershipMarker))||File.Exists(Path.Combine(Path.GetDirectoryName(executable)!,UpdateTransaction.OwnershipMarker)))
+                start.ArgumentList.Add("--update-from="+PortableLayout.CurrentEntry);
             if(LoggingEnabled)start.ArgumentList.Add("--log");
             System.Diagnostics.Process.Start(start);
         }catch(Exception ex){DiagnosticLogger.LogWarning("Restart failed: "+ex.Message);}
