@@ -88,3 +88,6 @@ Source-level work builds on Rings 12 and the 12 compilation repair. Existing beh
 | 40 | Keep one root launcher and private app/ runtime/docs, no PDBs; version defaults unified | Portable smoke test in Windows CI |
 
 No new native placement or guessed cross-protocol serial mapping. Hardware without common identity evidence cannot be automatically identified with certainty; manual links/splits remain available. The simulated tests do not certify a 168-hour soak or resource target. Publish only after Windows tests and real shell/hardware verification.
+
+## Public versioning
+Rings 15.0.0 is the internal development milestone underlying the first public release, v1.0.0. Subsequent public releases increment the 1.x version. Existing development builds need a one-time manual migration; historical milestones are unchanged.

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='15.0.0')
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='1.0.0')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }
@@ -24,7 +24,7 @@ $env:DOTNET_ROOT=Split-Path $dotnet -Parent
 $env:PATH="$env:DOTNET_ROOT;$env:PATH"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'
 
-$version="3.2.6-rings.$RingsVersion"
+$version=$RingsVersion
 if($Test) {
   & $dotnet test LGSTrayBattery.sln -c Release
   if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }

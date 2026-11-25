@@ -16,7 +16,7 @@ internal sealed class ReleaseUpdatePanel:StackPanel
     private string? staged;
     internal ReleaseUpdatePanel(){
         Children.Add(new TextBlock{Text="版本与更新",FontSize=18,FontWeight=FontWeights.SemiBold});
-        Children.Add(new TextBlock{Text=$"当前 Rings {RingsUpdateService.Current} · {NotifyIconViewModel.AssemblyBuildInfo}",TextWrapping=TextWrapping.Wrap});
+        Children.Add(new TextBlock{Text=$"当前版本 v{RingsUpdateService.Current} · {NotifyIconViewModel.AssemblyBuildInfo}",TextWrapping=TextWrapping.Wrap});
         Children.Add(status);
         var actions=new WrapPanel();actions.Children.Add(check);actions.Children.Add(install);Children.Add(actions);
         var cancel=new Button{Content="取消操作",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,3,5,3)};

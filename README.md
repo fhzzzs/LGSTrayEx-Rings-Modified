@@ -18,7 +18,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
-**Status:** Rings 10 is a development build. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
+**Status:** v1.0.0 is the first public release, based on the Rings 15 development milestone. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
 ## Features
 
@@ -37,17 +37,15 @@ LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless m
 
 ## Download and run
 
-1. Open the [Windows build workflow](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml).
-2. Select a successful build from the main branch.
-3. Under **Artifacts**, download **rings-portable-x64** (GitHub sign-in may be required).
-4. Extract the entire archive, including the inner portable ZIP if present.
-5. Run `LGSTray.exe`.
+1. Open [GitHub Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases).
+2. Download `LGSTrayEx-Rings-Portable-x64.zip` from the latest release.
+3. Extract the entire ZIP and run the outer `LGSTray.exe`. Keep `app/` beside it.
 
 Keep the companion executables, DLLs and configuration files together. Exit previous LGSTray instances first.
 
 **Requirements:** Windows 11 x64, a writable application folder and supported hardware. No separate .NET runtime, SDK, Visual Studio Build Tools or Windhawk installation is intended for users of the prebuilt package.
 
-If no successful build or downloadable artifact exists, the portable package is not yet available. Artifacts can expire. Check [Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases) for published versions when available. The GitHub Code → Download ZIP archive contains source code, not a ready-to-run EXE.
+Development builds are also available from successful [GitHub Actions](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml) runs. Artifacts can expire. Rings 15 development users must manually install v1.0.0 once; the public version numbering has restarted. The GitHub Code → Download ZIP archive contains source code, not a ready-to-run EXE.
 
 ## Using the application
 
@@ -123,8 +121,8 @@ LGSTrayEx Rings 是一款 Windows 11 无线设备电量监控工具，以圆环�
 - ROG Harpe Ace Mini OMNI 读取在后台自动执行，无须专用设置开关。
 - 仅在主任务栏右侧安全空位显示；空间不足时隐藏。
 
-**下载方式：** 前往 [GitHub Actions](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml)，选择 main 分支成功的构建，下载 Artifacts 中的 rings-portable-x64，完整解压后运行 LGSTray.exe。普通用户不需要安装 .NET SDK、Visual Studio Build Tools 或 Windhawk。
+**下载方式：** 前往 [GitHub Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases)，下载 LGSTrayEx-Rings-Portable-x64.zip，完整解压后运行最外层 LGSTray.exe。普通用户不需要安装 .NET SDK、Visual Studio Build Tools 或 Windhawk。
 
-当前是开发测试版本，具体设备兼容性及原生布局需实机验证。欢迎通过 Issues 反馈问题。
+v1.0.0 是基于 Rings 15 的首次公开发布版本。旧开发版需要手动升级一次；具体设备兼容性及任务栏布局仍需实机验证。欢迎通过 Issues 反馈问题。
 
 **作者：** [fhzzzs](https://github.com/fhzzzs) · GPL-3.0 · 保留原项目版权与署名。

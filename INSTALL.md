@@ -1,4 +1,4 @@
-# Battery Monitor Rings 11 — Installation
+# Battery Monitor v1.0.0 — Installation
 
 ## Normal users (portable binary)
 Extract the **entire** `LGSTrayEx-Rings-Portable-x64.zip` and launch `LGSTray.exe`.
@@ -13,13 +13,13 @@ Settings remain in the existing local application data directory. The right-side
 Exact matching serials and confirmed physical identifiers can be merged automatically. Unambiguous Logitech HID / G HUB mode-family sources may also be grouped reversibly without a source-count cap, including remembered offline sources, without saving an inferred physical identity. Manual separation overrides model matching. Some providers expose only a model name or temporary slot; the existing G HUB model fallback and native name-hash fallback may be ambiguous. Use manual merge/separate when necessary. Do not treat these fallback IDs as proof that two devices are the same.
 
 ## Verification
-Source/static checks only in the development environment. Windows compilation, standalone launch on a machine without .NET, actual taskbar geometry and hardware detection still require Windows tests. The source archive is not a tested portable build.
+Windows CI checks compilation, regression tests and the portable launcher. Interactive taskbar placement, hardware detection and long-running stability still require physical Windows testing.
 
 ## Version updates
 
 The About page checks formal GitHub Releases tagged `rings-X.Y.Z`. It requires the expected ZIP asset and SHA-256 digest. Verified packages are extracted to a new local version directory; the original executable folder is preserved. The user explicitly confirms restart or rollback. Personalization and device inventory continue to use the existing per-user directory; the portable TOML file now lives at app/appsettings.toml. A custom TOML file is not automatically copied into a new release. Re-enable startup from the intended version if the Windows startup path still points to an older folder.
 
-No stable release tag should be created until all automated tests and the interactive taskbar acceptance matrix pass. GitHub-hosted build runners validate compilation, not interactive shell placement.
+The first public release restarts numbering at 1.0.0. Users of Rings 15 and earlier development builds must manually install the new ZIP once; their old updater sees the new numbering as lower. GitHub-hosted runners do not validate interactive shell placement.
 
 ## Portable layout (11.0.2 and later)
 

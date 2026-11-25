@@ -22,7 +22,7 @@ internal static class RingDiagnostics
     internal static void Source(string root,string key)=>selected[root]=key;
     internal static string Report(DateTimeOffset now){
         var b=new StringBuilder();
-        b.AppendLine("Battery Monitor · Rings "+RingsUpdateService.Current);
+        b.AppendLine("Battery Monitor · v"+RingsUpdateService.Current);
         b.AppendLine("Windows "+Environment.OSVersion.Version+" · "+System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
         using(var p=Process.GetCurrentProcess()){
             b.AppendLine($"Working set: {p.WorkingSet64/1048576d:F1} MiB · Private: {p.PrivateMemorySize64/1048576d:F1} MiB · Threads: {p.Threads.Count} · Handles: {p.HandleCount}");
