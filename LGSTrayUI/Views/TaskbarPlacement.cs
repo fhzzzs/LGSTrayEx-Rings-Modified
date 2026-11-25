@@ -45,23 +45,17 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         var occupied=new List<(int left,int right)>();
         var nonStart=new List<(int left,int right)>();
         int? startButtonRight=null, startButtonLeft=null;
-        try {
-            var root=System.Windows.Automation.AutomationElement.FromHandle(bar);
-            var condition=new System.Windows.Automation.OrCondition(
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.AutomationIdProperty,"StartButton"),
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.Button),
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.TabItem),
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.ListItem),
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.MenuItem),
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty,System.Windows.Automation.ControlType.CheckBox));
-            foreach(System.Windows.Automation.AutomationElement item in root.FindAll(System.Windows.Automation.TreeScope.Descendants,condition)){
-                var r=item.Current.BoundingRectangle;if(item.Current.IsOffscreen||r.IsEmpty||r.Width<=0||r.Height<=0||r.Top>=y+height||r.Bottom<=y)continue;
-                bool isStart=item.Current.AutomationId=="StartButton"||
-                    (item.Current.ClassName=="ToggleButton"&&item.Current.Name is "Start" or "开始");
-                if(isStart && r.Left>=bounds.Left && r.Right<=end){startButtonRight=(int)Math.Ceiling(r.Right);startButtonLeft=(int)Math.Floor(r.Left);}
-                if(r.Left<end&&r.Right>bounds.Left){var interval=((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right));occupied.Add(interval);if(!isStart)nonStart.Add(interval);}
-            }
-        }catch{if(c.Left)NativeTaskbarSlot.Instance.Verify(false);return false;}
+        var slot=NativeTaskbarSlot.Instance;
+        if(!TaskbarAutomationProbe.TryRead(bar,bounds,c.Left?slot.GeometryNotBefore:0,out var controls)){
+            if(c.Left){slot.Verify(false);slot.ReportPlacement("实际位置：等待新鲜的任务栏控件几何数据");}
+            return false;
+        }
+        foreach(var item in controls){
+            var r=item.Rect;if(r.Top>=y+height||r.Bottom<=y)continue;
+            bool isStart=item.IsStart;
+            if(isStart && r.Left>=bounds.Left && r.Right<=end){startButtonRight=(int)Math.Ceiling(r.Right);startButtonLeft=(int)Math.Floor(r.Left);}
+            if(r.Left<end&&r.Right>bounds.Left){var interval=((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right));occupied.Add(interval);if(!isStart)nonStart.Add(interval);}
+        }
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
         // Prefer the exact Start-adjacent slot if it is already free. Never claim a reserved slot that Explorer did not allocate.
         var reserve=TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X);

@@ -31,10 +31,10 @@ struct alignas(8) Lease {
     volatile LONG64 reply;
 };
 static_assert(sizeof(Lease)==32 && offsetof(Lease,tick)==8 && offsetof(Lease,reply)==24);
-std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout.3."+std::to_wstring(GetCurrentProcessId());}
+std::wstring MappingName(){return L"Local\\LGSTray.Rings9.NativeLayout.4."+std::to_wstring(GetCurrentProcessId());}
 HWND PrimaryBar(){HWND h=FindWindowW(L"Shell_TrayWnd",nullptr);DWORD pid=0;if(h)GetWindowThreadProcessId(h,&pid);return pid==GetCurrentProcessId()?h:nullptr;}
 // Access these UI objects exclusively from the primary taskbar UI thread.
-FrameworkElement start{nullptr};
+FrameworkElement start{nullptr}, slotElement{nullptr};
 InstanceHandle startHandle{};
 std::vector<std::pair<InstanceHandle,FrameworkElement>> candidates;
 UINT_PTR timerId{};
@@ -53,17 +53,34 @@ void Restore(){
         }
     }catch(...){}
     try{
-        if(start && ownsMargin && Same(start.Margin(),ourMargin)){
-            if(oldMarginLocal==DependencyProperty::UnsetValue())start.ClearValue(FrameworkElement::MarginProperty());
-            else start.SetValue(FrameworkElement::MarginProperty(),oldMarginLocal);
+        if(slotElement && ownsMargin && Same(slotElement.Margin(),ourMargin)){
+            if(oldMarginLocal==DependencyProperty::UnsetValue())slotElement.ClearValue(FrameworkElement::MarginProperty());
+            else slotElement.SetValue(FrameworkElement::MarginProperty(),oldMarginLocal);
         }
     }catch(...){}
-    ownsMargin=ownsTransform=false;currentWidth=0;translation=nullptr;oldMarginLocal=nullptr;oldTransformLocal=nullptr;
+    ownsMargin=ownsTransform=false;currentWidth=0;translation=nullptr;oldMarginLocal=nullptr;oldTransformLocal=nullptr;slotElement=nullptr;
+}
+bool IsStart(FrameworkElement const& el){
+    if(!el)return false;
+    auto type=get_class_name(el);
+    if(type!=L"Taskbar.ExperienceToggleButton"&&type!=L"Windows.UI.Xaml.Controls.Primitives.ToggleButton")return false;
+    return Automation::AutomationProperties::GetAutomationId(el)==L"StartButton"||el.Name()==L"StartButton";
+}
+// Reserve space on the actual repeater item, not on a nested visual whose
+// margin might never participate in taskbar measure/arrange.
+FrameworkElement FindRepeaterItem(FrameworkElement const& el){
+    if(!el)return nullptr;
+    auto item=el;
+    for(int depth=0;depth<5;depth++){
+        auto parent=Media::VisualTreeHelper::GetParent(item).try_as<FrameworkElement>();
+        if(!parent)return nullptr;
+        if(parent.Name()==L"TaskbarFrameRepeater")return item;
+        item=parent;
+    }
+    return nullptr;
 }
 bool ValidStart(FrameworkElement const& el){
-    if(!el||get_class_name(el)!=L"Taskbar.ExperienceToggleButton"||Automation::AutomationProperties::GetAutomationId(el)!=L"StartButton")return false;
-    auto parent=Media::VisualTreeHelper::GetParent(el).try_as<FrameworkElement>();
-    return parent && parent.Name()==L"TaskbarFrameRepeater" && el.XamlRoot() && el.Visibility()==Visibility::Visible && el.ActualWidth()>10 && el.FlowDirection()==FlowDirection::LeftToRight;
+    return IsStart(el)&&el.XamlRoot()&&el.Visibility()==Visibility::Visible&&el.ActualWidth()>10&&el.FlowDirection()==FlowDirection::LeftToRight;
 }
 // The same Explorer UI thread can own multiple taskbars. Identify the primary
 // Start button by its actual automation screen bounds, never by thread alone.
@@ -94,23 +111,27 @@ int Apply(int width, RECT const& bounds, UINT dpi){
     const double barWidth=(bounds.right-bounds.left)*96.0/dpi;
     if(width<=0){Restore();conflict=false;return 0;}
     if(conflict)return -1;
-    if(!ValidStart(start)){Restore();return 0;}
+    if(!ValidStart(start)){Restore();return 2;}
+    auto item=FindRepeaterItem(start);
+    if(!item){Restore();return 5;}
+    if(slotElement&&slotElement!=item){Restore();return 3;}
+    slotElement=item;
     auto root=start.XamlRoot();
     if(root.Size().Width < 48 || root.Size().Width > barWidth+20){Restore();return -1;}
-    if((ownsMargin&&!Same(start.Margin(),ourMargin))||(ownsTransform&&start.RenderTransform()!=translation)){
+    if((ownsMargin&&!Same(slotElement.Margin(),ourMargin))||(ownsTransform&&start.RenderTransform()!=translation)){
         Restore();conflict=true;return -1;
     }
     if(!ownsMargin){
-        oldMarginLocal=start.ReadLocalValue(FrameworkElement::MarginProperty());
+        oldMarginLocal=slotElement.ReadLocalValue(FrameworkElement::MarginProperty());
         if(oldMarginLocal!=DependencyProperty::UnsetValue()){
             try{(void)unbox_value<Thickness>(oldMarginLocal);}catch(...){conflict=true;return -1;}
         }
-        initialMargin=start.Margin();
+        initialMargin=slotElement.Margin();
         if(!std::isfinite(initialMargin.Right)||initialMargin.Right<0){conflict=true;return -1;}
     }
     // This is an actual measure/arrange change: the native repeater reserves width after Start.
     if(!ownsMargin||width!=currentWidth){
-        ourMargin=initialMargin;ourMargin.Right+=width;start.Margin(ourMargin);ownsMargin=true;currentWidth=width;
+        ourMargin=initialMargin;ourMargin.Right+=width;slotElement.Margin(ourMargin);ownsMargin=true;currentWidth=width;
         return 3; // Wait one UI tick for Explorer's layout to settle.
     }
     // In centered mode Start's normal slot is centered too. Move only Start's visual
@@ -165,16 +186,17 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback,non_agile>{
         try{
             HWND bar=PrimaryBar();if(!bar||GetWindowThreadProcessId(bar,nullptr)!=GetCurrentThreadId())return S_OK;
             if(mutation==Remove){candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](auto const& item){return item.first==el.Handle;}),candidates.end());if(el.Handle==startHandle){Restore();start=nullptr;startHandle=0;conflict=false;}return S_OK;}
-            if(mutation!=Add||!el.Type||wcscmp(el.Type,L"Taskbar.ExperienceToggleButton")!=0)return S_OK;
-            Windows::Foundation::IInspectable obj{nullptr};
-            if(FAILED(diagnostics->GetIInspectableFromHandle(el.Handle,reinterpret_cast<::IInspectable**>(put_abi(obj)))))return S_OK;
-            auto f=obj.try_as<FrameworkElement>();
-            if(!f||Automation::AutomationProperties::GetAutomationId(f)!=L"StartButton")return S_OK;
-            if(std::none_of(candidates.begin(),candidates.end(),[&](auto const& item){return item.first==el.Handle;}))candidates.emplace_back(el.Handle,f);
-            // Pin only this specific loaded module so the UI timer cannot run into an unloaded DLL.
+            // Publish diagnostic heartbeat even when the expected Start element
+            // is absent on a newer visual tree. Never operate across UI threads.
             if(!timerId){HMODULE module=nullptr;
                 if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(&Tick),&module))timerId=SetTimer(nullptr,0,250,Tick);
             }
+            if(mutation!=Add||!el.Type||(wcscmp(el.Type,L"Taskbar.ExperienceToggleButton")!=0&&wcscmp(el.Type,L"Windows.UI.Xaml.Controls.Primitives.ToggleButton")!=0))return S_OK;
+            Windows::Foundation::IInspectable obj{nullptr};
+            if(FAILED(diagnostics->GetIInspectableFromHandle(el.Handle,reinterpret_cast<::IInspectable**>(put_abi(obj)))))return S_OK;
+            auto f=obj.try_as<FrameworkElement>();
+            if(!IsStart(f))return S_OK;
+            if(std::none_of(candidates.begin(),candidates.end(),[&](auto const& item){return item.first==el.Handle;}))candidates.emplace_back(el.Handle,f);
         }catch(...){}
         return S_OK;
     }

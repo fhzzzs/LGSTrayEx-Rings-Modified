@@ -31,6 +31,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
     private bool? _lastLeft;
     internal bool Acknowledged { get; private set; }
     internal bool Verified {get;private set;}
+    internal long GeometryNotBefore {get;private set;}
 
     // Restrict the first experimental revision to known horizontal Windows 11 x64 builds.
     internal static bool SupportedBuild(int build) => build is 22621 or 22631 or 26100 or 26200;
@@ -58,22 +59,25 @@ internal sealed class NativeTaskbarSlot : IDisposable
         if(!File.Exists(dll)){Release();Status="NativeLayout.dll 缺失 · 安全定位";return;}
         try{
             if(_view==null){
-                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.3.{pid}",32,MemoryMappedFileAccess.ReadWrite);
+                _map=MemoryMappedFile.CreateOrOpen($"Local\\LGSTray.Rings9.NativeLayout.4.{pid}",32,MemoryMappedFileAccess.ReadWrite);
                 _view=_map.CreateViewAccessor(0,32,MemoryMappedFileAccess.ReadWrite);
                 _request=0;_requestedAt=Environment.TickCount64;
                 _view.Write(16,0);_view.Write(20,0);_view.Write(24,0L);
             }
             long now=Environment.TickCount64;
-            if(_request!=wanted){_request=wanted;_requestedAt=now;_unusableSince=0;Acknowledged=false;Verified=false;}
+            if(_request!=wanted){_request=wanted;_requestedAt=now;_unusableSince=0;Acknowledged=false;Verified=false;GeometryNotBefore=0;}
             _view.Write(0,wanted);_view.Write(4,Environment.ProcessId);Thread.MemoryBarrier();_view.Write(8,now);
             long reply=_view.ReadInt64(24);int state=_view.ReadInt32(20),applied=_view.ReadInt32(16);Thread.MemoryBarrier();
+            bool priorAck=Acknowledged;
             Acknowledged=FreshReply(now,reply,_requestedAt,wanted,applied,state);
+            if(Acknowledged&&!priorAck)GeometryNotBefore=now;
+            if(!Acknowledged)GeometryNotBefore=0;
             if(Acknowledged){if(!Verified)Status="原生模块已确认布局 · 正在核验实际位置";return;}
             Verified=false;
             if(reply>=_requestedAt&&reply<=now&&now-reply<1500){
                 if(state<0){Block(wanted,"原生控件不兼容或存在布局冲突 · 安全定位");return;}
                 if(now-_requestedAt>12000){Block(wanted,$"原生布局等待超时（状态 {state}）");return;}
-                Status=state switch {2=>"原生模块已连接 · 未找到主任务栏 Start 控件",3=>"原生模块已连接 · 等待原生宽度生效",4=>"原生模块已连接 · 等待 Start 位移生效",_=>"原生模块已连接 · 等待布局"};
+                Status=state switch {2=>"原生模块已连接 · 未找到主任务栏 Start 控件",5=>"原生模块已连接 · Start 容器未能验证",3=>"原生模块已连接 · 等待原生宽度生效",4=>"原生模块已连接 · 等待 Start 位移生效",_=>"原生模块已连接 · 等待布局"};
                 return;
             }
             // Give an already-loaded provider time to acknowledge a restarted application.
@@ -97,7 +101,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
     private void Block(int width,string message){Release();_blockedWidth=width;_blockedReason=message;Status=message;DiagnosticLogger.LogWarning("NativeLayout: "+message);}
     private void Release(){
         try{if(_view!=null){_view.Write(0,0);Thread.MemoryBarrier();_view.Write(8,0L);}}catch{}
-        _view?.Dispose();_map?.Dispose();_view=null;_map=null;_request=0;Acknowledged=false;Verified=false;_unusableSince=0;
+        _view?.Dispose();_map?.Dispose();_view=null;_map=null;_request=0;Acknowledged=false;Verified=false;GeometryNotBefore=0;_unusableSince=0;
     }
     public void Dispose(){Release();_disposed=true;}
 
