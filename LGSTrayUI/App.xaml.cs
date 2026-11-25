@@ -260,6 +260,8 @@ public partial class App : Application
         var host=_host;_host=null;
         // Cancel the owned HID supervisor before a slower G HUB shutdown can block.
         try{host?.Services.GetService<LGSTrayHIDManager>()?.RequestStop();}catch(Exception ex){DiagnosticLogger.LogWarning("HID stop signal: "+ex.Message);}
+        // Hide immediately, even when final preference serialization takes time.
+        _taskbarBatteries?.Hide();
         CloseUi(host);
         DiagnosticLogger.Log($"Exit UI closed in {watch.ElapsedMilliseconds} ms");
         _startupCancellation.Cancel();
@@ -276,8 +278,8 @@ public partial class App : Application
                     }catch(Exception ex){DiagnosticLogger.LogWarning("Host stop: "+ex.Message);}
                     host.Dispose();
                     DiagnosticLogger.Log($"Host disposed in {watch.ElapsedMilliseconds} ms");
-                }).WaitAsync(TimeSpan.FromSeconds(3));
-            }catch(TimeoutException){DiagnosticLogger.LogWarning("Host cleanup exceeded 3 seconds; finishing application exit");}
+                }).WaitAsync(TimeSpan.FromSeconds(1.5));
+            }catch(TimeoutException){DiagnosticLogger.LogWarning("Host cleanup exceeded 1.5 seconds; finishing application exit");}
             catch(Exception ex){DiagnosticLogger.LogWarning("Host cleanup: "+ex.Message);}
         }
         DiagnosticLogger.Log($"Exit total before shutdown: {watch.ElapsedMilliseconds} ms");

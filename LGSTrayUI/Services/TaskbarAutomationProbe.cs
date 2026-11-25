@@ -15,6 +15,8 @@ internal static class TaskbarAutomationProbe
     private sealed record Snapshot(nint Bar,TaskbarPlacement.PixelRect Bounds,long Started,long Completed,Rect[] Controls);
     private static Task<Snapshot?>? pending;
     private static Snapshot? last;
+    private static long invalidated;
+    internal static void Invalidate(){invalidated=Environment.TickCount64;last=null;}
     internal static bool Fresh(long now,long started,long completed)
         =>completed>=started&&completed<=now&&now-started<=1500;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
@@ -25,7 +27,7 @@ internal static class TaskbarAutomationProbe
             if(pending.IsCompletedSuccessfully)last=pending.Result;
             pending=null;
         }
-        bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&Fresh(now,last.Started,last.Completed);
+        bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Started>=invalidated&&Fresh(now,last.Started,last.Completed);
         if(pending==null&&(!matching||now-last!.Completed>=400))
             pending=Task.Run(()=>Capture(bar,bounds));
         if(!matching||last!.Controls.Length==0)return false;

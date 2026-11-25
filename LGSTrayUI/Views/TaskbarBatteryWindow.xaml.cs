@@ -21,7 +21,8 @@ public partial class TaskbarBatteryWindow : Window
 {
     private readonly NotifyIconViewModel _tray;
     private readonly HashSet<LogiDeviceViewModel> _watched = [];
-    private readonly DispatcherTimer _positionTimer;
+    private readonly DispatcherTimer _positionTimer,_stateTimer;
+    private readonly TaskbarEventMonitor _shellEvents;
     private nint _handle;
     private TaskbarPlacement? _position;
     private bool _refreshPending;
@@ -34,7 +35,7 @@ public partial class TaskbarBatteryWindow : Window
     private bool _placementReady,_placementQueued;
     private readonly RingStripAnimator _animator;
     private RingSettingsWindow? _settings;
-    private readonly RingAlerts _alerts = new();
+    private readonly DeviceNotificationCenter _notifications=new();
 
     private DeviceGroup[] _groups = [];
     private TaskbarBattery[] _rows = [];
@@ -45,7 +46,7 @@ public partial class TaskbarBatteryWindow : Window
         InitializeComponent();
         _scanner=new DeviceScanCoordinator(Dispatcher,QueueRefresh);
         _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement){PlacementReady=()=>_placementReady};
-        RingConfig.Changed += SettingsChanged;
+        RingConfig.AreasChanged += SettingsChanged;
         _handle = new WindowInteropHelper(this).EnsureHandle();
         TaskbarPlacement.MakeToolWindow(_handle);
         HwndSource.FromHwnd(_handle)?.AddHook(HotkeyHook); RegisterHotKey(_handle,1001,0x4003,0x42);
@@ -56,6 +57,9 @@ public partial class TaskbarBatteryWindow : Window
         _positionTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
         _positionTimer.Tick += Reposition;
         _positionTimer.Start();
+        _stateTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(500)};
+        _stateTimer.Tick+=StateTick;_stateTimer.Start();
+        _shellEvents=new TaskbarEventMonitor(Dispatcher,UpdatePlacement);
         Reposition(null, EventArgs.Empty);
     }
 
@@ -63,6 +67,7 @@ public partial class TaskbarBatteryWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint h,int id);
     private nint HotkeyHook(nint hwnd,int msg,nint wp,nint lp,ref bool handled){
         if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}
+        if(msg is 0x007E or 0x02E0 or 0x001A){TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
         if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.RequestRescan();
         return 0;
     }
@@ -99,7 +104,12 @@ public partial class TaskbarBatteryWindow : Window
         if(changed){SaveKnownDevices();RingConfig.Save();}
         ApplySnapshot(ReadSnapshot(),true);
     }
-    private void SettingsChanged(){ _deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
+    private void SettingsChanged(PreferenceArea areas){
+        if(areas.HasFlag(PreferenceArea.Identity)){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2));RefreshReadings();}
+        if(areas.HasFlag(PreferenceArea.Providers))_scanner.Poll(DateTimeOffset.UtcNow);
+        if(areas.HasFlag(PreferenceArea.Layout)){ApplySnapshot(ReadSnapshot(),true);_animator.RefreshLayout();}
+    }
+    private void StateTick(object? sender,EventArgs e){if(!_closed)ApplySnapshot(ReadSnapshot());}
     private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
@@ -124,21 +134,13 @@ public partial class TaskbarBatteryWindow : Window
             foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);
             _settings?.UpdateDevices(_rows,_groups);
         }
-        foreach(var change in snapshot.Changes){
-            if(!c.ConnectionAlerts||!RingNotificationPolicy.CanNotify(c))continue;
-            var d=change.Device;
-            string name=c.Names.TryGetValue(d.Key,out var custom)&&!string.IsNullOrWhiteSpace(custom)?custom:d.Name;
-            PrimaryNotificationPopup.Show(name,change.Online?"已连接"+(d.Level is int n?$" · {n}%":""):"已断开连接",
-                change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(c.NotificationSeconds),deviceKey:d.Key);
-        }
-        _alerts.Check(_rows,snapshot.Suppressed);
+        _notifications.Observe(snapshot,DateTimeOffset.UtcNow);
     }
 
     private void Reposition(object? sender, EventArgs e)
     {
         if(_closed)return;
-        PollExtraDevices();
-        ApplySnapshot(ReadSnapshot());
+        // Placement no longer drives provider scans or the device state clock.
         if (_openMenu?.IsOpen == true) {
             return;
         }
@@ -205,8 +207,9 @@ public partial class TaskbarBatteryWindow : Window
     {
         _closed = true;
         UnregisterHotKey(_handle,1001); HwndSource.FromHwnd(_handle)?.RemoveHook(HotkeyHook);
-        RingConfig.Changed -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
+        RingConfig.AreasChanged -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
         _scanner.Dispose();
+        _shellEvents.Dispose();_stateTimer.Stop();_stateTimer.Tick-=StateTick;
         _positionTimer.Stop();
         _positionTimer.Tick -= Reposition;
         _tray.LogiDevices.CollectionChanged -= DevicesChanged;

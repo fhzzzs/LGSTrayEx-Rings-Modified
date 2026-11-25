@@ -219,16 +219,16 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
     private async Task RediscoverDevices()
     {
         DiagnosticLogger.Log("NotifyIconViewModel: Rediscover devices");
+        if(!RediscoverDevicesEnabled)return;
         RediscoverDevicesEnabled = false;
-
+        try{
         foreach (var manager in _deviceManagers)
         {
             _ = manager.RediscoverDevices();
         }
 
         await Task.Delay(10_000);
-
-        RediscoverDevicesEnabled = true;
+        }finally{RediscoverDevicesEnabled = true;}
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
