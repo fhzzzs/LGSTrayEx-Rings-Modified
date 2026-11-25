@@ -29,7 +29,8 @@ internal static class PhysicalIdentityRegistry
         {
             string root=g.Reading.Key;
             bool provisionalController=g.Inferred&&root.StartsWith("gip:",StringComparison.Ordinal);
-            var identitySources=g.Sources.Where(s=>!provisionalController||!ControllerAliasMatcher.IsXInput(s)).ToArray();
+            bool provisionalBluetooth=g.Inferred&&root.StartsWith("ble:",StringComparison.Ordinal)&&g.Sources.Any(ControllerAliasMatcher.IsXboxBle);
+            var identitySources=g.Sources.Where(s=>(!provisionalController||!ControllerAliasMatcher.IsXInput(s))&&(!provisionalBluetooth||(!ControllerAliasMatcher.IsXInput(s)&&!ControllerAliasMatcher.IsGip(s)))).ToArray();
             var candidates=identitySources.Select(s=>c.PhysicalSourceIds.GetValueOrDefault(s.Key))
                 .Where(s=>s!=null).Distinct().ToArray();
             var evidence=identitySources.Where(s=>!string.IsNullOrWhiteSpace(s.PhysicalId))

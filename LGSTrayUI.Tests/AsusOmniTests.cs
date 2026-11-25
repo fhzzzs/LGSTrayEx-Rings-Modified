@@ -1,6 +1,14 @@
 using Xunit;
 namespace LGSTrayUI.Tests;
 public class AsusOmniTests{
+    [Theory]
+    [InlineData(2,0xFF01,1,true)]
+    [InlineData(2,0xFF01,3,true)]
+    [InlineData(2,0xFF02,1,true)]
+    [InlineData(2,0xFF00,1,false)]
+    [InlineData(0,0xFF01,1,false)]
+    public void OmniAcceptsObservedMouseUsage(int iface,int page,int usage,bool expected)
+        =>Assert.Equal(expected,AsusBatteryReader.IsOmniChannel(iface,(ushort)page,(ushort)usage));
     [Fact]public void PairListMayContainNonzeroStatusByte(){
         byte[] reply=[1,0xA0,0x04,0,0,0x65,0x1B,0,0];
         Assert.True(AsusBatteryReader.ExpectedReply(reply,reply.Length,1,0xA0,0));

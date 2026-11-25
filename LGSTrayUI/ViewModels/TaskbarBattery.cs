@@ -20,6 +20,8 @@ internal sealed record TaskbarBattery
     public string Key {get;init;}
     public string? ShortLabel {get;init;}
     public string? PhysicalId {get;init;}
+    public ushort HardwareVendorId {get;init;}
+    public ushort HardwareProductId {get;init;}
     private string detail="已连接";
     private bool full;
     public ConnectionState Connection {get;private init;}

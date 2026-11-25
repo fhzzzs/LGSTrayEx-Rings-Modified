@@ -34,7 +34,7 @@ internal sealed class PhysicalDeviceCenter
         var previousKeys=rawGroups.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);
         var previousRaw=Inventory.Keys.ToHashSet(StringComparer.Ordinal);
         foreach(var d in current.Values){
-            if(!Inventory.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId||(old.Updated==DateTimeOffset.MinValue&&d.Updated!=DateTimeOffset.MinValue))changed=true;
+            if(!Inventory.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId||old.HardwareVendorId!=d.HardwareVendorId||old.HardwareProductId!=d.HardwareProductId||(old.Updated==DateTimeOffset.MinValue&&d.Updated!=DateTimeOffset.MinValue))changed=true;
             Inventory[d.Key]=old!=null&&d.Updated==DateTimeOffset.MinValue?d with{Updated=old.Updated}:d;
         }
         foreach(var key in Inventory.Keys.Where(k=>!current.ContainsKey(k)).ToArray())

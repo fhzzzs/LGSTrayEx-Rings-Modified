@@ -23,6 +23,7 @@ internal static class RingDiagnostics
     internal static string Report(DateTimeOffset now){
         var b=new StringBuilder();
         b.AppendLine("Battery Monitor · v"+RingsUpdateService.Current);
+        b.AppendLine("Captured: "+now.ToString("O"));
         b.AppendLine("Windows "+Environment.OSVersion.Version+" · "+System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
         using(var p=Process.GetCurrentProcess()){
             b.AppendLine($"Working set: {p.WorkingSet64/1048576d:F1} MiB · Private: {p.PrivateMemorySize64/1048576d:F1} MiB · Threads: {p.Threads.Count} · Handles: {p.HandleCount}");
@@ -45,8 +46,12 @@ internal static class RingDiagnostics
                 string age=s.Updated==DateTimeOffset.MinValue?"never":Math.Max(0,(now-s.Updated).TotalSeconds).ToString("F0")+"s ago";
                 b.AppendLine($"  {chosen}{DeviceIdentityManager.Source(s.Key)} · {s.Percent} · {s.Connection} · {age}");
                 b.AppendLine("    "+s.Key);
+                if(s.HardwareVendorId!=0||s.HardwareProductId!=0)b.AppendLine($"    VID:PID {s.HardwareVendorId:X4}:{s.HardwareProductId:X4}");
+                if(!string.IsNullOrWhiteSpace(s.PhysicalId))b.AppendLine("    Physical ID: "+s.PhysicalId);
             }
         }
+        b.AppendLine();
+        b.AppendLine($"END OF REPORT · {groups.Length} logical devices · {groups.Sum(g=>g.Sources.Length)} sources");
         return b.ToString();
     }
 }

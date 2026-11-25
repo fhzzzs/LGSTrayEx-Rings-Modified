@@ -24,6 +24,7 @@ internal sealed class BatterySourceSelector
             TaskbarBattery? chosen=null;
             if(preferences.PreferredSources.TryGetValue(root,out var preferred))
                 chosen=candidates.FirstOrDefault(d=>d.Key==preferred);
+            if(chosen==null&&group.Inferred&&sources.Any(ControllerAliasMatcher.IsGip))chosen=candidates.FirstOrDefault(ControllerAliasMatcher.IsXboxBle);
             if(chosen==null&&selected.TryGetValue(root,out var previous))
                 chosen=candidates.FirstOrDefault(d=>d.Key==previous);
             chosen??=candidates.Length>0?DeviceIdentityManager.Best(candidates,null):

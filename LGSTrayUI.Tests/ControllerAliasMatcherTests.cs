@@ -63,6 +63,22 @@ public class ControllerAliasMatcherTests
         var ble=new TaskbarBattery(DeviceType.Gamepad,"Xbox Wireless Controller",50,"已连接",false,T,"ble:xbox",PhysicalId:"ble-address:123456789ABC");
         Assert.Equal(2,DeviceIdentityManager.Group([g,x,ble],new()).Length);
     }
+    [Fact]public void MicrosoftXboxBlePrefersDirectBatteryAndRetainsBleIdentityOnReconnect(){
+        var ble=new TaskbarBattery(DeviceType.Gamepad,"Xbox Wireless Controller",82,"已连接",false,T,"ble:xbox",PhysicalId:"ble-address:123456789ABC");
+        var g=Gip() with{Name="HID-compliant game controller",Level=10,HardwareVendorId=0x045e,HardwareProductId=0x0b13};
+        var x=Slot() with{ShortLabel="—"};
+        var c=new RingPreferences();var center=new PhysicalDeviceCenter(T);
+        center.RefreshInventory([ble,g,x],c);
+        var first=Assert.Single(center.Advance(c,T).Groups);
+        Assert.Equal(82,first.Reading.Level);Assert.Equal(3,first.Sources.Length);
+        Assert.Equal("Xbox Wireless Controller",first.Reading.Name);
+        center.RefreshInventory([ble,g with{Key="gip:changed"},x],c);
+        var second=Assert.Single(center.Advance(c,T).Groups);
+        Assert.Equal(first.Reading.Key,second.Reading.Key);
+        Assert.Equal(82,second.Reading.Level);
+        Assert.False(c.PhysicalSourceIds.ContainsKey("gip:changed"));
+        Assert.Equal(3,DeviceIdentityManager.Group([ble,g,Gip("gip:other")],new()).Length);
+    }
     [Fact]public void DifferentModelOrWirelessBandDoesNotTriggerUsbHeuristic(){
         Assert.Equal(2,DeviceIdentityManager.Group([Gip() with{Name="Other Controller"},Slot()],new()).Length);
         Assert.Equal(2,DeviceIdentityManager.Group([Gip(),Slot() with{ShortLabel="Med"}],new()).Length);

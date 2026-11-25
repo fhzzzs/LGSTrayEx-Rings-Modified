@@ -38,8 +38,16 @@ internal static class AsusBatteryReader
         if(last<=0||parts[2].Length-last!=5||!ushort.TryParse(parts[2][(last+1)..],System.Globalization.NumberStyles.HexNumber,null,out _))return null;
         return parts[2][..last];
     }
+    internal static bool SameReceiver(string pathA,Guid idA,string pathB,Guid idB)
+    {
+        if(idA!=Guid.Empty&&idB!=Guid.Empty&&idA==idB)return true;
+        var a=ReceiverInstance(pathA);var b=ReceiverInstance(pathB);
+        return a!=null&&a==b;
+    }
+    internal static bool IsOmniChannel(int iface,ushort page,ushort usage)
+        =>iface==2&&((page==0xFF02&&usage==1)||(page==0xFF01&&(usage==1||usage==3)));
     internal static bool ExpectedReply(byte[] data,int length,byte report,byte command,byte sub)
-        =>length>=9&&data[0]==report&&data[1]==command&&(command==0xA0||data[2]==sub);
+        =>length<=data.Length&&length>=(command==0xA0?7:11)&&data[0]==report&&data[1]==command&&(command==0xA0||data[2]==sub);
     private static byte[]? Exchange(string path,byte report,byte command,byte sub)
     {
         var h=hid_open_path(path);if(h==0)return null;
@@ -77,26 +85,29 @@ internal static class AsusBatteryReader
         try{
             for(var p=head;p!=0;){var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
                 notes.Add($"HID mi={d.Interface} page={d.UsagePage:X4} usage={d.Usage:X4}");
-                if(d.Interface!=2||!((d.UsagePage==0xFF02&&d.Usage==1)||(d.UsagePage==0xFF01&&d.Usage==3)))continue;
+                if(!IsOmniChannel(d.Interface,d.UsagePage,d.Usage))continue;
                 var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
                 Guid id=Guid.Empty;
                 var h=hid_open_path(path);
                 if(h!=0)try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}
                     catch(EntryPointNotFoundException){id=Guid.Empty;}finally{hid_close(h);}
                 else notes.Add($"open failed page={d.UsagePage:X4}");
-                if(id!=Guid.Empty||ReceiverInstance(path)!=null)channels.Add(new(path,id,d.UsagePage,d.Usage));
+                var stem=ReceiverInstance(path);
+                notes.Add($"candidate page={d.UsagePage:X4} usage={d.Usage:X4} container={(id==Guid.Empty?"unavailable":id.ToString("N"))} instance={stem??"unavailable"}");
+                if(id!=Guid.Empty||stem!=null)channels.Add(new(path,id,d.UsagePage,d.Usage));
             }
         }finally{if(head!=0)hid_free_enumeration(head);}
         // Prefer a validated HID instance stem; fall back to an exact container ID.
-        foreach(var group in channels.GroupBy(c=>ReceiverInstance(c.Path) is string stem?"instance:"+stem:"container:"+c.Container.ToString("N"))){
-            var pairing=group.Where(c=>c.Page==0xFF02).ToArray();var mouse=group.Where(c=>c.Page==0xFF01).ToArray();
+        foreach(var pair in channels.Where(c=>c.Page==0xFF02)){
+            var pairing=channels.Where(c=>c.Page==0xFF02&&SameReceiver(pair.Path,pair.Container,c.Path,c.Container)).ToArray();
+            var mouse=channels.Where(c=>c.Page==0xFF01&&SameReceiver(pair.Path,pair.Container,c.Path,c.Container)).ToArray();
             if(pairing.Length!=1||mouse.Length!=1){notes.Add($"incomplete/ambiguous receiver: pair={pairing.Length}, mouse={mouse.Length}");continue;}
-            var pairs=Exchange(pairing[0].Path,1,0xA0,0);
+            var pairs=Exchange(pair.Path,1,0xA0,0);
             if(!PairedHarpe(pairs)){notes.Add(pairs==null?"pair list timeout":"pair list did not identify Harpe Ace Mini");continue;}
             notes.Add("Harpe Ace Mini pairing confirmed");
             var reading=Decode(Exchange(mouse[0].Path,3,0x12,0x07));
             var id=pairing[0].Container!=Guid.Empty?pairing[0].Container:mouse[0].Container;
-            string key="asus:harpe-mini:"+(id!=Guid.Empty?id.ToString("N"):group.Key);
+            string key="asus:harpe-mini:"+(id!=Guid.Empty?id.ToString("N"):"instance:"+ReceiverInstance(pair.Path));
             notes.Add(reading.HasValue?"battery reply accepted":"battery reply absent/invalid");
             if(reading is { } value){var (level,charging)=value;result.Add(new(DeviceType.Mouse,"ROG Harpe Ace Mini",level,charging?(level==100?"已充满":"充电中"):"已连接",charging,DateTimeOffset.Now,key));}
             else result.Add(new(DeviceType.Mouse,"ROG Harpe Ace Mini",null,"离线",false,DateTimeOffset.MinValue,key));

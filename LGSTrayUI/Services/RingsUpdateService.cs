@@ -34,7 +34,7 @@ internal static class RingsUpdateService
     internal static Version ParseBuildVersion(string value){
         int pos=value.IndexOf("-rings.",StringComparison.Ordinal);
         var version=(pos>=0?value[(pos+7)..]:value).Split('+')[0];
-        return Version.TryParse(version,out var parsed)?parsed:new Version(1,0,1);
+        return Version.TryParse(version,out var parsed)?parsed:new Version(1,0,2);
     }
     internal static bool TryTag(string? tag,out Version version){
         version=new Version(0,0,0);
