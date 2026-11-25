@@ -20,7 +20,7 @@ internal static class RingSettingsStore
             throw new FormatException("不支持的配置版本。");
         var c=JsonSerializer.Deserialize<RingPreferences>(json)??throw new FormatException("配置为空。");
         // Null containers from imports must never reach the identity or UI engines.
-        c.PhysicalSourceIds??=new();c.PhysicalEvidenceIds??=new();c.PhysicalSourceEvidence??=new();
+        c.PhysicalSourceIds??=new();c.PhysicalEvidenceIds??=new();c.PhysicalSourceEvidence??=new();c.ControllerHistoryHints??=new();
         c.AutomaticAliases??=new();c.DeviceAliases??=new();c.PreferredSources??=new();
         c.ModelGroupRoots??=[];c.IgnoredDevices??=[];c.SeparateDeviceSources??=[];
         c.Order??=[];c.Hidden??=[];c.Names??=new();c.DeviceRules??=new();c.DeviceColors??=new();

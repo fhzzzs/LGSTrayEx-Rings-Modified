@@ -37,3 +37,7 @@ Require passing Windows CI and an interactive Windows 11 check of right-side pla
 | 9 | Notification event center, logical-ID deduplication and connection/low-alert priority | Verify actual hardware alerts |
 
 Source phases are committed without moving the main branch until all nine are staged. The final branch update triggers Windows tests and a single portable build. No native left-layout code is reintroduced. Items 10–16 are not part of this change.
+
+### Rings 11.0.1 controller compatibility
+
+One live Xbox 360 Controller for Windows WGI record with valid battery data and one live USB XInput slot can be grouped provisionally. Keep the WGI logical ID and battery, retain both sources, and do not permanently assign the XInput slot to that device. Inactive history hints only attach offline placeholders. Multiple live candidates, separate-device choices and other models are not guessed. This is a reversible compatibility heuristic rather than hardware identity proof. Real multi-controller validation remains necessary.

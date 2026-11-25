@@ -39,11 +39,12 @@ internal sealed class PhysicalDeviceCenter
         }
         foreach(var key in Inventory.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
             Inventory[key]=Inventory[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+        var previousControllerHints=new Dictionary<string,string>(c.ControllerHistoryHints);
         var previousSourceEvidence=new Dictionary<string,string>(c.PhysicalSourceEvidence);
         var previousIds=new Dictionary<string,string>(c.PhysicalSourceIds);var previousEvidence=new Dictionary<string,string>(c.PhysicalEvidenceIds);
         var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);int previousModelRoots=c.ModelGroupRoots.Count;
         Regroup(c);
-        if(previousSourceEvidence.Count!=c.PhysicalSourceEvidence.Count||previousSourceEvidence.Any(p=>c.PhysicalSourceEvidence.GetValueOrDefault(p.Key)!=p.Value)||previousIds.Count!=c.PhysicalSourceIds.Count||previousIds.Any(p=>c.PhysicalSourceIds.GetValueOrDefault(p.Key)!=p.Value)||
+        if(previousControllerHints.Count!=c.ControllerHistoryHints.Count||previousControllerHints.Any(p=>c.ControllerHistoryHints.GetValueOrDefault(p.Key)!=p.Value)||previousSourceEvidence.Count!=c.PhysicalSourceEvidence.Count||previousSourceEvidence.Any(p=>c.PhysicalSourceEvidence.GetValueOrDefault(p.Key)!=p.Value)||previousIds.Count!=c.PhysicalSourceIds.Count||previousIds.Any(p=>c.PhysicalSourceIds.GetValueOrDefault(p.Key)!=p.Value)||
            previousEvidence.Count!=c.PhysicalEvidenceIds.Count||previousEvidence.Any(p=>c.PhysicalEvidenceIds.GetValueOrDefault(p.Key)!=p.Value))changed=true;
         if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)changed=true;
         foreach(var group in rawGroups){

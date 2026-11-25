@@ -106,6 +106,7 @@ internal static class DeviceIdentityManager
                 inferred.Add(root);
             }
         }
+        ControllerAliasMatcher.Apply(raw,c,roots,inferred);
         return raw.GroupBy(d=>roots[d.Key],StringComparer.Ordinal).Select(g=>{
             var sources=g.OrderBy(d=>d.Key,StringComparer.Ordinal).ToArray();var best=Best(sources,c.PreferredSources.GetValueOrDefault(g.Key));
             var primary=sources.FirstOrDefault(d=>d.Key==g.Key)??best;

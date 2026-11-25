@@ -28,9 +28,11 @@ internal static class PhysicalIdentityRegistry
             .ThenBy(g=>g.Reading.Key,StringComparer.Ordinal))
         {
             string root=g.Reading.Key;
-            var candidates=g.Sources.Select(s=>c.PhysicalSourceIds.GetValueOrDefault(s.Key))
+            bool provisionalController=g.Inferred&&root.StartsWith("gip:",StringComparison.Ordinal);
+            var identitySources=g.Sources.Where(s=>!provisionalController||!ControllerAliasMatcher.IsXInput(s)).ToArray();
+            var candidates=identitySources.Select(s=>c.PhysicalSourceIds.GetValueOrDefault(s.Key))
                 .Where(s=>s!=null).Distinct().ToArray();
-            var evidence=g.Sources.Where(s=>!string.IsNullOrWhiteSpace(s.PhysicalId))
+            var evidence=identitySources.Where(s=>!string.IsNullOrWhiteSpace(s.PhysicalId))
                 .Select(s=>s.Type+":"+s.PhysicalId).Distinct().ToArray();
             string? id=IsId(root)?root:c.PhysicalSourceIds.GetValueOrDefault(root);
             if(id==null&&candidates.Length==1)id=candidates[0];
@@ -47,7 +49,7 @@ internal static class PhysicalIdentityRegistry
             // Only migrate legacy source settings on first association. A
             // later unhide/unignore must not be undone by old source settings.
             if(!IsId(root)&&!c.PhysicalSourceIds.ContainsKey(root))Transfer(root);
-            foreach(var s in g.Sources){
+            foreach(var s in identitySources){
                 if(!c.PhysicalSourceIds.ContainsKey(s.Key))Transfer(s.Key);
                 c.PhysicalSourceIds[s.Key]=id;
             }
