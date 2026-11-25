@@ -35,6 +35,8 @@ public partial class App : Application
     private IHost? _host; // DI container for accessing services
     private Task? _hostStart;
     private bool _exitRequested;
+    private string? _restartExecutable;
+    internal void RestartInto(string executable){if(_exitRequested)return;_restartExecutable=Path.GetFullPath(executable);RequestExit();}
     private readonly CancellationTokenSource _startupCancellation=new();
     private IEnumerable<IDeviceManager>? _deviceManagers; // Cached device managers for wake handler
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
@@ -314,6 +316,12 @@ public partial class App : Application
         }
 
         _mutex?.Dispose();
+        if(_restartExecutable is string executable)try{
+            var start=new System.Diagnostics.ProcessStartInfo(executable){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(executable)!};
+            start.ArgumentList.Add("--wait-parent="+Environment.ProcessId);
+            if(LoggingEnabled)start.ArgumentList.Add("--log");
+            System.Diagnostics.Process.Start(start);
+        }catch(Exception ex){DiagnosticLogger.LogWarning("Restart failed: "+ex.Message);}
         DiagnosticLogger.Log("Application exit complete");
         base.OnExit(e);
     }

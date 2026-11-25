@@ -12,7 +12,7 @@ Baseline: Rings.9 commit `70bebc5`. This roadmap documents repository changes, n
 | Notifications | Shared lifecycle, configurable placement/monitor/size/duration/opacity, quiet/full-screen policy and optional full-charge alert | One logical event per device; suppress rescan/startup/wake; compact bounded popups |
 | Lifecycle/performance | Nonblocking shutdown from Rings.9, controller scanning off UI dispatcher and coalesced placement requests | Nonblocking UI shutdown, owned child cleanup, event-driven polling with cancellation |
 | Settings/themes | Versioned flat migration, atomic backups, independent theme fields; legacy files preserved | Versioned migration, theme application never mutates identity or connection preferences |
-| Updates | Pending | Versioned release packages, integrity verification, rollback; no replacement of active executables |
+| Updates | Release-only check, SHA-256 verification, side-by-side staging, restart and rollback UI; tagged release workflow prepared; end-to-end validation pending | Versioned release packages, integrity verification, rollback; no replacement of active executables |
 | Tests | Ongoing | Automated regressions per stage, Windows CI; actual shell rendering requires real Windows testing |
 
 No arbitrary same-name merge: source count is not evidence of physical identity. Known serial conflicts and ambiguous reporting devices remain separate. Manual links and splits retain user intent. Keep hardware protocol readers and current UI during migration. 

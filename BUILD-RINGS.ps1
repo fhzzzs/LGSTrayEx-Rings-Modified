@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test)
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='10.0.0')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }
@@ -23,7 +23,8 @@ elseif (!(Test-Sdk $dotnet)) {
 $env:DOTNET_ROOT=Split-Path $dotnet -Parent
 $env:PATH="$env:DOTNET_ROOT;$env:PATH"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'
-$version='3.2.6-rings.9'
+
+$version="3.2.6-rings.$RingsVersion"
 if($Test) {
   & $dotnet test LGSTrayBattery.sln -c Release
   if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
@@ -75,11 +76,11 @@ foreach($file in @('LGSTray.exe','LGSTrayHID.exe','hidapi.dll','appsettings.toml
 }
 Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $out -Force
 @'
-Battery Monitor - Rings.9 (Windows 11 x64)
+Battery Monitor - Rings (Windows 11 x64)
 Extract the complete archive to a writable directory, then run LGSTray.exe.
 The .NET runtime is bundled. No SDK, Windhawk, or mod installation is required.
 Keep LGSTrayHID.exe and the supplied DLLs beside LGSTray.exe.
-NativeLayout.dll is experimental. Left placement automatically attempts a native XAML reservation; unsupported builds fall back to safe positioning. See INSTALL.md.
+NativeLayout.dll is experimental. Strict Left placement requires a verified native XAML reservation; safe overlay fallback is optional. See INSTALL.md.
 Source and license: https://github.com/fhzzzs (modified edition); see MODIFICATIONS.md.
 '@ | Set-Content (Join-Path $out 'START-HERE.txt') -Encoding UTF8
 Compress-Archive -Path "$out\*" -DestinationPath $zip -Force

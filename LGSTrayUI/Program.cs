@@ -13,6 +13,11 @@ namespace LGSTrayUI
             // the WPF application and loading all WPF dlls
             try
             {
+                foreach(var arg in Environment.GetCommandLineArgs()){
+                    if(!arg.StartsWith("--wait-parent=",StringComparison.Ordinal))continue;
+                    if(int.TryParse(arg[14..],out int pid)&&pid>0&&pid!=Environment.ProcessId)
+                        try{using var parent=System.Diagnostics.Process.GetProcessById(pid);if(!parent.WaitForExit(10000))return;}catch(ArgumentException){}
+                }
                 RunApp();
             }
             catch (Exception ex)
