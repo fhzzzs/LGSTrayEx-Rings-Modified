@@ -11,7 +11,7 @@ internal enum AsusProtocol { DirectMouse, OmniMouse, OmniKeyboard, SpeednovaMous
 internal sealed record AsusProfile(ushort Pid,string Name,DeviceType Type,AsusProtocol Protocol,int BatteryByte=5,int Scale=1,int InterfaceNumber=0);
 internal static class PeripheralCatalog
 {
-    internal const string Revision="2.0.0";
+    internal const string Revision="1.0.5";
     private static readonly AsusProfile[] asus=Create();
     private static AsusProfile[] Create(){
         var rows=new List<AsusProfile>();

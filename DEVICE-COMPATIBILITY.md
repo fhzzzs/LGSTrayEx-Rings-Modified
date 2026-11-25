@@ -1,4 +1,4 @@
-# Battery Monitor 2.0 — compatibility and validation
+# Battery Monitor 1.0.5 — compatibility and validation
 
 This is a protocol coverage catalog, not a certification of every model.
 Read-only battery/status requests only; no changes to DPI, RGB, key bindings,
@@ -8,7 +8,7 @@ pairing, firmware, drivers or Armoury Crate settings.
 
 - **User hardware confirmed (1.0.3):** ROG Harpe Ace Mini over OMNI; Xbox Wireless
   Controller BLE+WGI+XInput; Logitech PRO X SUPERLIGHT 2, PRO X 2 LIGHTSPEED,
-  and G735 (see user diagnostics). The expanded 2.0 code must be retested.
+  and G735 (see user diagnostics). The expanded 1.0.5 code must be retested.
 - **Protocol implemented, physical validation pending:** known ASUS direct
   mice, OMNI mice/keyboards, confirmed Harpe II SPEEDNOVA model strings,
   Strix Go 2.4 feature reports; supported Logitech HID++ 2.0 battery features;
@@ -89,7 +89,7 @@ Battery Monitor architecture. No external vendor app or executable is bundled.
 - https://github.com/seerge/g-helper/tree/main/app/Peripherals/Keyboard/Models — direct keyboard IDs and battery offsets
 - https://github.com/seerge/g-helper/tree/main/app/Peripherals/Headset/Models — Delta II/Pelta
 
-## Second 2.0.0 completion checkpoint — unbuilt
+## Second 1.0.5 completion checkpoint — unbuilt
 
 - Legacy Logitech HID++ 1.0: for a recognized online receiver announcement with mouse/keyboard type and WPID, a valid 0x0D register read permits a scoped fallback device to initialize. Capacity is accepted only for documented discharging/full states. The 0x07 coarse status register and older receiver metadata discovery still need implementation; this is not complete HID++ 1.0 coverage.
 - Passive Sony DualSense/Edge/DualShock 4, Nintendo Switch Pro/Joy-Con, and selected 8BitDo D-input full reports: no feature-report trigger, USB handshake, output report, or mode change is sent. Bluetooth basic mode may have no battery reading. Sony Bluetooth CRC is validated; Sony/Nintendo values are estimates; 8BitDo enhanced reports carry percent and charging. Windows zero-padded reports are not interpreted as zero percent. The Switch 2-specific controllers and proprietary GameSir/8BitDo variants are not established by these adapters.
@@ -110,7 +110,7 @@ Protocol facts consulted (implementations not hardware certified in this fork):
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/nintendo.py
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/wgi.py
 
-## Third 2.0.0 checkpoint: GameSir and resource lifecycle (unbuilt)
+## Third 1.0.5 checkpoint: GameSir and resource lifecycle (unbuilt)
 
 - G7 Pro known edition IDs, including Wuchang 3537:10A9 and ZZZ 105E, use WGI; the shared 1004 ID is not assumed to be G7. The 10A9 high-rate mode is not treated as a private configuration channel. XInput is a band fallback; unique inferred links are reversible, with G7 history restricted per PID.
 - Cyclone 2 (100B/102A/101D/1053) vendor page FFF0: passive live 0x12 input battery field, explicit opt-in documented status query only when the descriptor confirms a 64-byte output report. Never send this command to G7 Pro. Invalid levels, charge states and all-zero idle receiver frames are rejected. Exact device validation remains required.

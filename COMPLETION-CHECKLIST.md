@@ -1,6 +1,6 @@
-# 2.0.0 completion checklist — development only
+# 1.0.5 completion checklist — development only
 
-Baseline main is b2ef07c; packaging unchanged. Development builds retain version 2.0.0; distinguish test packages by GitHub Actions run number. The first checkpoint CI compiled successfully but failed the obsolete ASUS toggle regression; the new field is isolated and a retry is requested. Nothing below claims attached hardware validation or a soak test.
+Baseline main is b2ef07c; packaging unchanged. Development builds use version 1.0.5, continuing from 1.0.4; distinguish test packages by GitHub Actions run number. The first checkpoint CI compiled successfully but failed the obsolete ASUS toggle regression; the isolated replacement field passed the subsequent CI retry (run 45555567861). Nothing below claims attached hardware validation or a soak test.
 The existing main 2.0.0 CI success is for the baseline only.
 
 | Original item | Work in this checkpoint | Still required |
@@ -45,3 +45,5 @@ standard BLE service still govern actual battery availability.
 Second checkpoint: additional C# parser and safety regression tests are authored but have not been compiled or executed. No new package, release, or version. Original 27 items remain open until their remaining acceptance criteria are met.
 
 Third checkpoint prioritizes 22 and 30–35. Source changes and tests authored, no Windows build or hardware measurements. These seven remain open for their explicit validation gates; no version bump or release.
+
+Version-only correction: the previously tested 2.0.x labels are not official releases. Source functionality and outstanding physical validation gates are unchanged. Build 1.0.5 from this branch before any release.

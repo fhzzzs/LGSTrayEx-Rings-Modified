@@ -18,7 +18,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 Battery Monitor is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
-**Status:** 2.0.0 development test build; v1.0.0 is the first historical public release. Expanded protocols are pending physical validation. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
+**Status:** 1.0.5 development test build; v1.0.0 is the first historical public release. Expanded protocols are pending physical validation. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
 ## Features
 
@@ -62,7 +62,7 @@ Right-click a battery ring or the app's notification-area icon to open the share
 
 ## Device compatibility
 
-Battery Monitor 2.0 introduces a protocol allowlist and broader automatic
+Battery Monitor 1.0.5 introduces a protocol allowlist and broader automatic
 discovery. See [DEVICE-COMPATIBILITY.md](DEVICE-COMPATIBILITY.md) for the
 implemented paths, protocol sources, validation tiers, known limitations and
 the optional 168-hour performance sampler.
@@ -132,3 +132,5 @@ Battery Monitor 是一款 Windows 11 无线设备电量监控工具，以圆环�
 v1.0.0 是基于 Rings 15 的首次公开发布版本。1.0.2 及以前的旧版本需要手动下载新版 ZIP 升级一次；具体设备兼容性及任务栏布局仍需实机验证。欢迎通过 Issues 反馈问题。
 
 **修改者：** [fhzzzs](https://github.com/fhzzzs) · GPL-3.0 · 保留原项目版权与署名。
+
+Development test builds use the numeric application version 1.0.5 and GitHub Actions run identifiers. No formal release is implied. Earlier experimental 2.0.0/2.0.1 test packages must be replaced manually; a normal version comparison treats 1.0.5 as older.

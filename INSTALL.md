@@ -31,3 +31,6 @@ Settings, device inventory and themes are saved by a coalescing background write
 
 ## Name migration (v1.0.3)
 Download the new ZIP once manually when upgrading from v1.0.2 or earlier; older updaters expect the legacy asset and executable name. Existing settings remain in the same per-user folder. If Windows startup was enabled, toggle it off/on in the new version to register Battery Monitor.exe. Both old and new executable names are supported for rollback.
+
+### Moving from an experimental 2.0.x test build
+The development version returns to 1.0.5, following 1.0.4. Close Battery Monitor and extract the new ZIP into a separate folder, then launch the root Battery Monitor.exe. Do not rely on automatic update to install a numerically lower version. User settings remain in the existing local application data directory. If auto-start was enabled, re-enable it from the new executable to refresh the startup path.

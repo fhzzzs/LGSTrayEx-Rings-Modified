@@ -44,17 +44,19 @@ Public product and executable names are Battery Monitor. Original upstream credi
 ## v1.0.4 — device identity and performance
 Normalize embedded NUL characters in controller IDs and stored identity keys; verify complete clipboard text. For observed GameSir G7 Pro 3537:10A9, use the raw Windows Gaming Input battery report, with XInput fallback. Reversible single-model history grouping is disabled after simultaneous same-model devices are observed; no serial identity is fabricated. Cache animation-frame snapshots and drawing pens, reduce unnecessary device subscriptions and grouping comparisons, defer initial shell placement until after dispatcher startup. Real hardware readings and long-running performance remain to be measured.
 
-## v2.0.0 — integrated compatibility expansion
-Stages 1.1–1.5 developed without intermediate branch builds: protocol allowlist, expanded ASUS status readers, safer Logitech HID++ 2.0 fallback, controller naming/Windows battery paths, read quality and disagreement diagnostics, bounded session history and adaptive scheduling. Included source references, local hardware discovery and a 168-hour sampler. Real-device coverage and resource targets remain unverified. See DEVICE-COMPATIBILITY.md.
+## v1.0.5 — integrated compatibility expansion (initially labeled 2.0.0 in CI)
+Roadmap stages 1.1–1.5 (planning labels, not release versions) developed without intermediate branch builds: protocol allowlist, expanded ASUS status readers, safer Logitech HID++ 2.0 fallback, controller naming/Windows battery paths, read quality and disagreement diagnostics, bounded session history and adaptive scheduling. Included source references, local hardware discovery and a 168-hour sampler. Real-device coverage and resource targets remain unverified. See DEVICE-COMPATIBILITY.md.
 
-## 2.0.0 completion checkpoint (unbuilt)
-Additional ASTRO A50 Gen 5 and ASUS direct keyboard/headset adapters; scoped HID fallback identity, managed hotplug queue, exact register matching, Centurion SOC validation, battery freshness, shell probe backoff, offline cleanup, local display catalog. See COMPLETION-CHECKLIST.md for open items. Version remains 2.0.0.
+## 1.0.5 completion checkpoint (unbuilt)
+Additional ASTRO A50 Gen 5 and ASUS direct keyboard/headset adapters; scoped HID fallback identity, managed hotplug queue, exact register matching, Centurion SOC validation, battery freshness, shell probe backoff, offline cleanup, local display catalog. See COMPLETION-CHECKLIST.md for open items. Version remains 1.0.5.
 
-## 2.0.0 completion checkpoint 2 (unbuilt)
+## 1.0.5 completion checkpoint 2 (unbuilt)
 Passive native Sony/Nintendo/8BitDo report readers; scoped legacy 0x0D fallback; expanded ASUS profiles and Cetra components; WGI placeholder validation; confirmed-history retention; data-only online catalog and independent provider switches. Refer to COMPLETION-CHECKLIST.md. No version bump or Windows validation.
 
-## 2.0.0 completion checkpoint 3 (unbuilt)
+## 1.0.5 completion checkpoint 3 (unbuilt)
 GameSir G7 edition IDs and safe WGI fallback, Cyclone 2 live report parser and opt-in status request; sleep/resume scan control, UIA caching/metrics, actual HID reader completion, partial handle cleanup, stable ring geometry caching, timestamp-only rendering path, startup phase instrumentation, and CSV resource delta analysis. 22 and 30–35 advanced; no build or hardware acceptance claimed.
 
-## v2.0.0 — development build retry
-Keep the obsolete UseAsus field ignored; the current explicit provider switch uses AsusHidEnabled, defaults on, and is independently persisted. Preserve the original regression test and add a round-trip test for the new field. Version remains 2.0.0; use the GitHub Actions run number to distinguish test packages. No formal release or hardware certification.
+## v1.0.5 — development build retry
+Keep the obsolete UseAsus field ignored; the current explicit provider switch uses AsusHidEnabled, defaults on, and is independently persisted. Preserve the original regression test and add a round-trip test for the new field. Version remains 1.0.5; use the GitHub Actions run number to distinguish test packages. No formal release or hardware certification.
+
+Version policy: continue from 1.0.4 to 1.0.5, keep compatibility and performance fixes on the same development version, distinguish intermediate packages by Actions run ID, and reserve minor/major increments for substantial validated changes. Earlier 2.0.x identifiers were experimental CI labels, not releases. No functionality was reverted.
