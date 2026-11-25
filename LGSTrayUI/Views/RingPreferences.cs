@@ -9,6 +9,7 @@ namespace LGSTrayUI;
 
 internal sealed class RingPreferences
 {
+    public int SchemaVersion {get;set;}=2;
     public string Normal {get;set;}="#34C759"; public string Low {get;set;}="#FFCC00"; public string Critical {get;set;}="#FF3B30";
     public string Offline {get;set;}="#8E8E93"; public string Icon {get;set;}="#F5F5F5"; public string Text {get;set;}="#F5F5F5";
     public bool AutoContrast {get;set;}=true; public string Track {get;set;}="#FFFFFF"; public string Charging {get;set;}="#0A84FF"; public string Background {get;set;}="#0020242C";
@@ -29,6 +30,14 @@ internal sealed class RingPreferences
     public double LowAt {get;set;}=20; public double CriticalAt {get;set;}=10; public bool AutoAdd {get;set;}=true; public bool AutoHide {get;set;}=true;
     public bool Alerts {get;set;}=true; public bool Sound {get;set;}=true; public string Rules {get;set;}="20:30,10:15,5:5";
     public bool ConnectionAlerts {get;set;}=true;
+    public bool FullChargeAlerts {get;set;}=false;
+    public bool QuietNotifications {get;set;}=false;
+    public bool SuppressFullScreen {get;set;}=true;
+    public double NotificationSeconds {get;set;}=4;
+    public double NotificationWidth {get;set;}=300;
+    public double NotificationOpacity {get;set;}=100;
+    public string NotificationCorner {get;set;}="BottomRight";
+    public string NotificationMonitor {get;set;}="Primary";
     public bool AutoDeduplicate {get;set;}=true;
     public Dictionary<string,string> AutomaticAliases {get;set;}=new();
     public List<string> ModelGroupRoots {get;set;}=[];
@@ -58,11 +67,12 @@ internal static class RingConfig
     internal static event Action? Changed;
     private static string PathName=>Path.Combine(AppDataPaths.LocalAppDataDir,"rings-settings.json");
     private static DispatcherTimer? timer;
-    private static RingPreferences Load(){try{return JsonSerializer.Deserialize<RingPreferences>(File.ReadAllText(PathName))??new();}catch{return new();}}
+    private static RingPreferences Load()=>RingSettingsStore.Load(PathName);
     internal static void Notify(){Changed?.Invoke();timer??=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(350)};timer.Stop();timer.Tick-=SaveTick;timer.Tick+=SaveTick;timer.Start();}
     private static void SaveTick(object? s,EventArgs e){timer?.Stop();Save();}
-    internal static void Save(){try{Directory.CreateDirectory(System.IO.Path.GetDirectoryName(PathName)!);File.WriteAllText(PathName+".tmp",JsonSerializer.Serialize(Current,new JsonSerializerOptions{WriteIndented=true}));File.Move(PathName+".tmp",PathName,true);}catch(Exception ex){DiagnosticLogger.LogWarning("Ring settings: "+ex.Message);}}
-    internal static void Export(string path)=>File.WriteAllText(path,JsonSerializer.Serialize(Current,new JsonSerializerOptions{WriteIndented=true}));
-    internal static void Import(string path){Current=JsonSerializer.Deserialize<RingPreferences>(File.ReadAllText(path))??new();Notify();}
+    internal static void Save(){try{RingSettingsStore.Save(PathName,Current);}catch(Exception ex){DiagnosticLogger.LogWarning("Ring settings: "+ex.Message);}}
+    internal static void Flush(){timer?.Stop();Save();}
+    internal static void Export(string path)=>RingSettingsStore.Save(path,Current);
+    internal static void Import(string path){Current=RingSettingsStore.Parse(File.ReadAllText(path));Notify();}
     internal static void Reset(){Current=new();Notify();}
 }

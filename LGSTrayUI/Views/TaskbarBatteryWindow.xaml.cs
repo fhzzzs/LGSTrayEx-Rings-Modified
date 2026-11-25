@@ -170,9 +170,7 @@ public partial class TaskbarBatteryWindow : Window
         {
             var inventory = _remembered.Values.Select(d => new KnownDevice(d.Type, d.Name, d.Key,d.PhysicalId,d.Updated)).ToArray();
             Directory.CreateDirectory(Path.GetDirectoryName(_knownPath)!);
-            string temp = _knownPath + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(inventory));
-            File.Move(temp, _knownPath, true);
+            RingSettingsStore.WriteAtomic(_knownPath,JsonSerializer.Serialize(inventory));
         }
         catch (Exception ex) { DiagnosticLogger.LogWarning($"Taskbar inventory save: {ex.Message}"); }
     }
@@ -238,13 +236,13 @@ public partial class TaskbarBatteryWindow : Window
             _settings?.UpdateDevices(_rows,_groups);
         }
         foreach(var change in snapshot.Changes){
-            if(!c.ConnectionAlerts)continue;
+            if(!c.ConnectionAlerts||!RingNotificationPolicy.CanNotify(c))continue;
             var d=change.Device;
             string name=c.Names.TryGetValue(d.Key,out var custom)&&!string.IsNullOrWhiteSpace(custom)?custom:d.Name;
             PrimaryNotificationPopup.Show(name,change.Online?"已连接"+(d.Level is int n?$" · {n}%":""):"已断开连接",
-                change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(4),deviceKey:d.Key);
+                change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(c.NotificationSeconds),deviceKey:d.Key);
         }
-        if(!snapshot.Suppressed)_alerts.Check(_rows);
+        _alerts.Check(_rows,snapshot.Suppressed);
     }
 
     private void Reposition(object? sender, EventArgs e)
@@ -321,7 +319,7 @@ public partial class TaskbarBatteryWindow : Window
         _closed = true;
         NativeTaskbarSlot.Instance.Dispose();
         UnregisterHotKey(_handle,1001); HwndSource.FromHwnd(_handle)?.RemoveHook(HotkeyHook);
-        RingConfig.Changed -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Save();
+        RingConfig.Changed -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
         _stop.Cancel();
         _stop.Dispose();
         _positionTimer.Stop();

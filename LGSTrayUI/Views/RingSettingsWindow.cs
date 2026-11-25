@@ -156,6 +156,14 @@ internal sealed class RingSettingsWindow : Window
     {
         var intro=new StackPanel();intro.Children.Add(new TextBlock{Text="电量提醒",FontSize=18,FontWeight=FontWeights.SemiBold});intro.Children.Add(Label("设置设备电量不足时的通知和声音。"));
         var toggles=new WrapPanel();Check(toggles,"设备连接 / 断开提醒",c.ConnectionAlerts,v=>c.ConnectionAlerts=v);Check(toggles,"低电量提醒",c.Alerts,v=>c.Alerts=v);Check(toggles,"播放提示音",c.Sound,v=>c.Sound=v);foreach(FrameworkElement toggle in toggles.Children)toggle.Margin=new Thickness(0,8,24,6);intro.Children.Add(toggles);
+        Check(intro,"充电完成提醒（可选）",c.FullChargeAlerts,v=>c.FullChargeAlerts=v);
+        Check(intro,"勿扰模式",c.QuietNotifications,v=>c.QuietNotifications=v);
+        Check(intro,"全屏时静默",c.SuppressFullScreen,v=>c.SuppressFullScreen=v);
+        Choice(intro,"显示器",c.NotificationMonitor,["Primary","Active"],v=>c.NotificationMonitor=v);
+        Choice(intro,"通知位置",c.NotificationCorner,["BottomRight","BottomLeft","TopRight","TopLeft"],v=>c.NotificationCorner=v);
+        Slider(intro,"通知宽度 (DIP)",c.NotificationWidth,240,420,10,v=>c.NotificationWidth=v);
+        Slider(intro,"普通通知显示秒数",c.NotificationSeconds,2,15,1,v=>c.NotificationSeconds=v);
+        Slider(intro,"通知不透明度 %",c.NotificationOpacity,60,100,5,v=>c.NotificationOpacity=v);
         var choices=new[]{(Key:"",Name:"所有设备（全局）")}.Concat(devices.Select(d=>(d.Key,d.Name))).ToArray();
         var selector=new ComboBox{ItemsSource=choices.Select(x=>x.Name).ToArray(),SelectedIndex=Math.Max(0,Array.FindIndex(choices,x=>x.Key==notificationDevice)),Margin=new Thickness(0,4,0,0)};
         intro.Children.Add(Label("应用到"));intro.Children.Add(selector);body.Children.Add(PanelCard(intro));

@@ -17,18 +17,20 @@ internal static class NotificationPlacement
     internal const double Width=300,CompactHeight=76,ActionHeight=114;
     internal const int MaxVisible=3;
     internal static Rect[] Stack(Rect work,double scale,int count)=>Stack(work,scale,Enumerable.Repeat(CompactHeight,Math.Clamp(count,0,MaxVisible)).ToArray());
-    internal static Rect[] Stack(Rect work,double scale,IReadOnlyList<double> heights)
+    internal static Rect[] Stack(Rect work,double scale,IReadOnlyList<double> heights,double widthDip=Width,string corner="BottomRight")
     {
         if(work.IsEmpty||work.Width<=0||work.Height<=0||!double.IsFinite(scale)||scale<=0||heights.Count==0)return [];
         double margin=Math.Min(Math.Ceiling(12*scale),Math.Min(work.Width,work.Height)/8);
         double gap=Math.Ceiling(8*scale);
-        double width=Math.Max(1,Math.Min(Math.Ceiling(Width*scale),work.Width-2*margin));
-        double bottom=work.Bottom-margin;var result=new List<Rect>();
+        double width=Math.Max(1,Math.Min(Math.Ceiling(Math.Clamp(widthDip,240,420)*scale),work.Width-2*margin));
+        bool top=corner.StartsWith("Top",StringComparison.Ordinal),left=corner.EndsWith("Left",StringComparison.Ordinal);
+        double cursor=top?work.Top+margin:work.Bottom-margin;var result=new List<Rect>();
         foreach(double logical in heights.Take(MaxVisible)){
             double height=Math.Max(1,Math.Min(Math.Ceiling(logical*scale),work.Height-2*margin));
-            if(bottom-height<work.Top+margin)break;
-            result.Add(new Rect(work.Right-margin-width,bottom-height,width,height));
-            bottom-=height+gap;
+            double y=top?cursor:cursor-height;
+            if(y<work.Top+margin||y+height>work.Bottom-margin)break;
+            result.Add(new Rect(left?work.Left+margin:work.Right-margin-width,y,width,height));
+            cursor+= (top?1:-1)*(height+gap);
         }
         return result.ToArray();
     }
@@ -40,6 +42,7 @@ internal static class PrimaryNotificationPopup
     private static readonly List<Entry> Active=[];
     private static bool arranging;
     private static DispatcherTimer? monitorTimer;
+    private static nint targetMonitor;
     internal static void CloseAll(){monitorTimer?.Stop();foreach(var entry in Active.ToArray())entry.Window.Close();}
     internal static void Show(string title,string message,string color,TimeSpan expiration,string? actionText=null,Action? action=null,string? deviceKey=null)
     {
@@ -47,11 +50,13 @@ internal static class PrimaryNotificationPopup
         if(dispatcher==null||dispatcher.HasShutdownStarted)return;
         if(!dispatcher.CheckAccess()){dispatcher.BeginInvoke(new Action(()=>Show(title,message,color,expiration,actionText,action,deviceKey)));return;}
         if(deviceKey!=null)foreach(var old in Active.Where(e=>e.DeviceKey==deviceKey).ToArray())old.Window.Close();
+        var preferences=RingConfig.Current;
+        if(Active.Count==0)targetMonitor=preferences.NotificationMonitor=="Active"?MonitorFromWindow(GetForegroundWindow(),2):MonitorFromPoint(new PointI(),1);
         double height=actionText==null?NotificationPlacement.CompactHeight:NotificationPlacement.ActionHeight;
         var w=new Window{
             Title="Battery Monitor",WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
             Topmost=true,ShowActivated=false,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.Manual,
-            Width=NotificationPlacement.Width,Height=height,Background=new SolidColorBrush(RingPreferences.Ink("#25282E")),Foreground=Brushes.White
+            Width=preferences.NotificationWidth,Height=height,Opacity=preferences.NotificationOpacity/100,Background=new SolidColorBrush(RingPreferences.Ink("#25282E")),Foreground=Brushes.White
         };
         var root=new DockPanel{Margin=new Thickness(9,7,9,7)};
         var accent=new Border{Width=3,CornerRadius=new CornerRadius(2),Margin=new Thickness(0,2,9,2),Background=new SolidColorBrush(RingPreferences.Ink(color))};DockPanel.SetDock(accent,Dock.Left);root.Children.Add(accent);
@@ -95,12 +100,14 @@ internal static class PrimaryNotificationPopup
         if(arranging||Active.Count==0)return;
         arranging=true;
         try{
-            var monitor=MonitorFromPoint(new PointI(),1); // MONITOR_DEFAULTTOPRIMARY
+            var monitor=targetMonitor;
             var info=new MonitorInfo{Size=Marshal.SizeOf<MonitorInfo>()};
-            if(monitor==0||!GetMonitorInfo(monitor,ref info))return;
-            double scale=GetDpiForSystem()/96d;if(scale<=0)scale=1;
+            if(monitor==0||!GetMonitorInfo(monitor,ref info)){monitor=MonitorFromPoint(new PointI(),1);if(monitor==0||!GetMonitorInfo(monitor,ref info))return;targetMonitor=monitor;}
+            double scale=GetDpiForSystem()/96d;
+            try{if(GetDpiForMonitor(monitor,0,out uint dx,out _)==0&&dx>0)scale=dx/96d;}catch{}
+            if(scale<=0)scale=1;
             var work=new Rect(info.Work.Left,info.Work.Top,Math.Max(0,info.Work.Right-info.Work.Left),Math.Max(0,info.Work.Bottom-info.Work.Top));
-            var positions=NotificationPlacement.Stack(work,scale,Active.AsEnumerable().Reverse().Select(e=>e.Height).ToArray());
+            var positions=NotificationPlacement.Stack(work,scale,Active.AsEnumerable().Reverse().Select(e=>e.Height).ToArray(),RingConfig.Current.NotificationWidth,RingConfig.Current.NotificationCorner);
             if(positions.Length==0)return;
             while(Active.Count>positions.Length)Active[0].Window.Close();
             for(int i=0;i<Active.Count;i++){
@@ -117,6 +124,9 @@ internal static class PrimaryNotificationPopup
     [DllImport("user32.dll")]private static extern nint MonitorFromPoint(PointI point,uint flags);
     [DllImport("user32.dll",EntryPoint="GetMonitorInfoW")]private static extern bool GetMonitorInfo(nint monitor,ref MonitorInfo info);
     [DllImport("user32.dll")]private static extern uint GetDpiForSystem();
+    [DllImport("user32.dll")]private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")]private static extern nint MonitorFromWindow(nint h,uint flags);
+    [DllImport("shcore.dll")]private static extern int GetDpiForMonitor(nint m,int kind,out uint x,out uint y);
     [DllImport("user32.dll")]private static extern bool GetWindowRect(nint window,out RectI rect);
     [DllImport("user32.dll")]private static extern bool SetWindowPos(nint window,nint after,int x,int y,int width,int height,uint flags);
 }
