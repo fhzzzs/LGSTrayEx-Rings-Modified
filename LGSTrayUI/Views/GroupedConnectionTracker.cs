@@ -5,9 +5,10 @@ using System.Linq;
 namespace LGSTrayUI;
 
 internal sealed record ConnectionChange(TaskbarBattery Device,bool Online);
+internal sealed record ConnectionSnapshot(DeviceGroup[] Groups,ConnectionChange[] Changes,bool Suppressed);
 
-// The UI inventory is the source of truth: HID/G HUB transitions are not device events.
-// Baseline initial discovery and rescans silently, then require a stable state change.
+// A single confirmed lifecycle feeds rendering and notification. Raw source
+// disappearance is not a confirmed physical disconnect.
 internal sealed class GroupedConnectionTracker
 {
     private sealed class State
@@ -16,6 +17,8 @@ internal sealed class GroupedConnectionTracker
         internal bool? Pending;
         internal DateTimeOffset Since;
         internal HashSet<string> Sources=new(StringComparer.Ordinal);
+        internal TaskbarBattery? Last;
+        internal bool HeldDuringSuppression;
     }
     private Dictionary<string,State> states=new(StringComparer.Ordinal);
     private DateTimeOffset suppressedUntil,lastObserved;
@@ -30,26 +33,32 @@ internal sealed class GroupedConnectionTracker
     }
     internal bool IsSuppressed(DateTimeOffset now)=>now<suppressedUntil;
     private static bool Online(DeviceGroup g)=>g.Sources.Any(d=>!d.Offline&&d.Status!="等待连接");
-    internal ConnectionChange[] Observe(IEnumerable<DeviceGroup> groups,DateTimeOffset now)
+    internal ConnectionChange[] Observe(IEnumerable<DeviceGroup> groups,DateTimeOffset now)=>ObserveSnapshot(groups,now).Changes;
+    internal ConnectionSnapshot ObserveSnapshot(IEnumerable<DeviceGroup> groups,DateTimeOffset now)
     {
-        // A long observation gap is common during sleep/hibernate; rebaseline on wake.
         if(now-lastObserved>TimeSpan.FromSeconds(15))Suppress(now,TimeSpan.FromSeconds(10));
         lastObserved=now;
         bool quiet=IsSuppressed(now);
         var next=new Dictionary<string,State>(StringComparer.Ordinal);
         var changes=new List<ConnectionChange>();
-        var snapshot=groups.ToArray();
-        foreach(var g in snapshot)
+        var effective=new List<DeviceGroup>();
+        var snapshot=groups.Select(g=>(Group:g,Keys:g.Sources.Select(d=>d.Key).Append(g.Reading.Key).ToHashSet(StringComparer.Ordinal))).ToArray();
+        foreach(var item in snapshot)
         {
-            var key=g.Reading.Key;
-            var sources=g.Sources.Select(d=>d.Key).Append(key).ToHashSet(StringComparer.Ordinal);
+            var g=item.Group;var key=g.Reading.Key;var sources=item.Keys;
             bool online=Online(g);
             var matches=states.Where(p=>p.Key==key||p.Value.Sources.Overlaps(sources)).Select(p=>p.Value).Distinct().ToArray();
             var state=matches.Length==1?matches[0]:new State{Online=matches.Length>1?online:false};
-            // A merge/split or a user setting change is not a plug/unplug.
-            bool split=matches.Length==1&&snapshot.Count(other=>other.Sources.Select(d=>d.Key).Append(other.Reading.Key).Any(state.Sources.Contains))>1;
-            if(quiet||matches.Length>1||split){
+            bool split=matches.Length==1&&snapshot.Count(other=>other.Keys.Overlaps(state.Sources))>1;
+            if(matches.Length>1||split){
                 state=new State{Online=online};
+            }else if(quiet){
+                if(state.Online&&!online&&state.Last!=null)state.HeldDuringSuppression=true;
+                else{state.Online=online;state.HeldDuringSuppression=false;}
+                state.Pending=null;
+            }else if(state.HeldDuringSuppression){
+                // End a rescan by silently reconciling the settled inventory.
+                state.Online=online;state.HeldDuringSuppression=false;state.Pending=null;
             }else if(state.Online==online){
                 state.Pending=null;
             }else if(state.Pending!=online){
@@ -58,9 +67,16 @@ internal sealed class GroupedConnectionTracker
                 state.Online=online;state.Pending=null;
                 changes.Add(new ConnectionChange(g.Reading,online));
             }
+            TaskbarBattery reading=g.Reading;
+            if(state.Online&&!online&&state.Last!=null)
+                reading=state.Last with{Key=key,Name=g.Reading.Name,Status="重新连接",Charging=false};
+            else if(!state.Online&&online)
+                reading=g.Reading with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+            if(state.Online&&online)state.Last=g.Reading;
             state.Sources=sources;next[key]=state;
+            effective.Add(g with{Reading=reading});
         }
         states=next;
-        return changes.ToArray();
+        return new ConnectionSnapshot(effective.ToArray(),changes.ToArray(),quiet);
     }
 }

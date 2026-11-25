@@ -27,7 +27,8 @@ public partial class TaskbarBatteryWindow : Window
     private bool _refreshPending;
     private bool _closed;
     private ContextMenu? _openMenu;
-    private readonly Dictionary<string, TaskbarBattery> _remembered = new(StringComparer.Ordinal);
+    private readonly PhysicalDeviceCenter _deviceCenter=new(DateTimeOffset.UtcNow);
+    private Dictionary<string,TaskbarBattery> _remembered=>_deviceCenter.Inventory;
     private readonly CancellationTokenSource _stop = new();
     private readonly string _knownPath = Path.Combine(AppDataPaths.LocalAppDataDir, "taskbar-devices.json");
     private IReadOnlyList<TaskbarBattery> _bluetooth = Array.Empty<TaskbarBattery>();
@@ -41,8 +42,7 @@ public partial class TaskbarBatteryWindow : Window
     private readonly RingStripAnimator _animator;
     private RingSettingsWindow? _settings;
     private readonly RingAlerts _alerts = new();
-    private readonly GroupedConnectionTracker _connections = new(DateTimeOffset.UtcNow);
-    private readonly BatterySourceSelector _sourceSelector = new();
+
     private DeviceGroup[] _groups = [];
     private TaskbarBattery[] _rows = [];
 
@@ -120,7 +120,9 @@ public partial class TaskbarBatteryWindow : Window
             _remembered[key]=_remembered[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
         var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);
         int previousModelRoots=c.ModelGroupRoots.Count;
-        _groups=_sourceSelector.Select(DeviceIdentityManager.Group(_remembered.Values,c),c,DateTimeOffset.UtcNow);
+        _deviceCenter.Regroup(c);
+        var snapshot=ReadSnapshot();
+        _groups=snapshot.Groups;
         if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)inventoryChanged=true;
         foreach(var group in _groups){
             var key=group.Reading.Key;
@@ -129,20 +131,10 @@ public partial class TaskbarBatteryWindow : Window
                 if(c.Order.Count>0&&!c.Order.Contains(key))c.Order.Add(key);
             }
         }
-        // XInput is a fallback slot, not a permanent hardware identity. Do not resurrect
-        // obsolete fallback slots in the main list while GIP is the active provider.
-        // The raw records are still available for explicit linking or cleanup.
-        bool gipActive=_controllers.Any(d=>!d.Offline&&d.Key.StartsWith("gip:",StringComparison.Ordinal));
-        var rows=_groups.Where(g=>!g.Ignored&&!(c.AutoDeduplicate&&gipActive&&g.Sources.All(d=>d.Offline&&d.Key.StartsWith("xinput:",StringComparison.Ordinal))))
-            .Select(g=>g.Reading).Select(d=>c.Names.TryGetValue(d.Key,out var name)&&!string.IsNullOrWhiteSpace(name)?d with{Name=name}:d).ToList();
-        _rows=rows.ToArray();
         if(inventoryChanged){SaveKnownDevices();RingConfig.Save();}
-        _animator.Update(rows);
-        foreach(var child in RingItems.Children) if(child is Button b) ToolTipService.SetIsEnabled(b,RingConfig.Current.Hover);
-        CheckNotifications();
-        if (_settings != null) _settings.UpdateDevices(rows,_groups);
+        ApplySnapshot(snapshot,true);
     }
-    private void SettingsChanged(){ _connections.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
+    private void SettingsChanged(){ _deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
     private void UpdatePlacement(){ if (_closed) return; Dispatcher.BeginInvoke(new Action(()=>Reposition(null,EventArgs.Empty))); }
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
@@ -219,27 +211,37 @@ public partial class TaskbarBatteryWindow : Window
         else if (!_scanningBluetooth && now >= _nextBluetooth) _ = ScanBluetoothAsync();
     }
 
-    private void CheckNotifications()
+    private PhysicalDeviceSnapshot ReadSnapshot()
     {
         var now=DateTimeOffset.UtcNow;
-        if(!_tray.RediscoverDevicesEnabled)_connections.Suppress(now,TimeSpan.FromSeconds(5));
+        if(!_tray.RediscoverDevicesEnabled)_deviceCenter.Suppress(now,TimeSpan.FromSeconds(5));
+        return _deviceCenter.Advance(RingConfig.Current,now);
+    }
+    private void ApplySnapshot(PhysicalDeviceSnapshot snapshot,bool force=false)
+    {
         var c=RingConfig.Current;
-        foreach(var change in _connections.Observe(_groups.Where(g=>!g.Ignored),now))
-        {
+        bool changed=force||!_rows.SequenceEqual(snapshot.Rows);
+        _groups=snapshot.Groups;_rows=snapshot.Rows;
+        if(changed){
+            _animator.Update(_rows);
+            foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);
+            _settings?.UpdateDevices(_rows,_groups);
+        }
+        foreach(var change in snapshot.Changes){
             if(!c.ConnectionAlerts)continue;
             var d=change.Device;
             string name=c.Names.TryGetValue(d.Key,out var custom)&&!string.IsNullOrWhiteSpace(custom)?custom:d.Name;
             PrimaryNotificationPopup.Show(name,change.Online?"已连接"+(d.Level is int n?$" · {n}%":""):"已断开连接",
                 change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(4),deviceKey:d.Key);
         }
-        if(!_connections.IsSuppressed(now))_alerts.Check(_rows);
+        if(!snapshot.Suppressed)_alerts.Check(_rows);
     }
 
     private void Reposition(object? sender, EventArgs e)
     {
         if(_closed)return;
         PollExtraDevices();
-        CheckNotifications();
+        ApplySnapshot(ReadSnapshot());
         NativeTaskbarSlot.Instance.Update(_animator.Width);
         if (_openMenu?.IsOpen == true) {
             return;
@@ -287,7 +289,7 @@ public partial class TaskbarBatteryWindow : Window
         b.Unloaded+=(_,_)=>{if(menu.IsOpen)menu.IsOpen=false;};
         return b;
     }
-    internal void Rescan(){_connections.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_nextBluetooth=_nextControllers=_nextAsus=DateTimeOffset.MinValue;PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
+    internal void Rescan(){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_nextBluetooth=_nextControllers=_nextAsus=DateTimeOffset.MinValue;PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
 
     private void ForgetOffline(object sender, RoutedEventArgs e)
     {

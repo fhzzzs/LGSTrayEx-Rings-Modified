@@ -6,7 +6,7 @@ Baseline: Rings.9 commit `70bebc5`. This roadmap documents repository changes, n
 |---|---|---|
 | Device identity | Phase 1 implemented | Unlimited exact-ID/manual sources; unlimited unreported G HUB mode aliases only when family evidence is unambiguous; conflicting serials stay separate |
 | Source selection | Phase 1 implemented | Stable usable source, explicit preference among usable fresh sources, fallback on loss or stale source |
-| Device state center | Pending | Single lifecycle snapshot consumed by renderer, notifications and settings; preserve states across rescan, suspend and mode changes |
+| Device state center | Confirmed snapshot shared by UI and alerts; tests added | Single lifecycle snapshot consumed by renderer, notifications and settings; preserve states across rescan, suspend and mode changes |
 | Native taskbar | Pending hardware validation | Actual native slot verified on Win11 multi-monitor; no fallback presented as native |
 | Animation | Pending | Retarget without collision, reserve native space before entry and release after exit |
 | Notifications | Partial (Rings.9) | One logical event per device; suppress rescan/startup/wake; compact bounded popups |
