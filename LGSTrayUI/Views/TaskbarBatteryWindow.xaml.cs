@@ -130,7 +130,7 @@ public partial class TaskbarBatteryWindow : Window
     {
         var c=RingConfig.Current;
         bool changed=force||!_rows.SequenceEqual(snapshot.Rows);
-        _groups=snapshot.Groups;_rows=snapshot.Rows;
+        _groups=snapshot.Groups;_rows=snapshot.Rows;RingDiagnostics.Observe(_groups);
         if(changed){
             _animator.Update(_rows);
             foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);

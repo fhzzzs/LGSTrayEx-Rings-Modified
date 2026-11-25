@@ -34,6 +34,9 @@ internal sealed class ProviderScheduler:IDisposable
         internal CancellationTokenSource? Flight;
         internal int Generation,Failures;
         internal bool Enabled;
+        internal double LastMs;
+        internal DateTimeOffset Updated;
+        internal string? Error;
     }
     private readonly Slot[] slots;
     private readonly DispatcherTimer timer;
@@ -46,6 +49,7 @@ internal sealed class ProviderScheduler:IDisposable
         timer.Tick+=Tick;timer.Start();
     }
     internal IEnumerable<TaskbarBattery> Readings=>slots.SelectMany(s=>s.Rows);
+    private void Publish(Slot s)=>RingDiagnostics.Provider(new(s.Provider.Id,s.Enabled,s.Flight!=null,s.Failures,s.LastMs,s.Rows.Count,s.Updated,s.Error));
     private void Tick(object? sender,EventArgs e)=>Poll();
     internal void Rescan(string? id=null)
     {
@@ -58,26 +62,26 @@ internal sealed class ProviderScheduler:IDisposable
         foreach(var s in slots){
             bool enabled=s.Provider.Enabled(c);
             if(enabled!=s.Enabled){s.Enabled=enabled;s.Generation++;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();
-                if(!enabled&&s.Rows.Count>0){s.Rows=[];changed();}}
+                if(!enabled&&s.Rows.Count>0){s.Rows=[];changed();}Publish(s);}
             if(enabled&&s.Flight==null&&now>=s.Next)_=Run(s);
         }
     }
     private async Task Run(Slot s)
     {
         int generation=s.Generation;using var cts=new CancellationTokenSource(s.Provider.Timeout);
-        s.Flight=cts;
+        s.Flight=cts;var watch=System.Diagnostics.Stopwatch.StartNew();Publish(s);
         try{
             var rows=await s.Provider.ReadAsync(cts.Token);
             cts.Token.ThrowIfCancellationRequested();
             if(disposed||generation!=s.Generation)return;
-            s.Failures=0;if(!s.Rows.SequenceEqual(rows)){s.Rows=rows;changed();}
+            s.Failures=0;s.Error=null;s.Updated=DateTimeOffset.UtcNow;if(!s.Rows.SequenceEqual(rows)){s.Rows=rows;changed();}
         }catch(OperationCanceledException){if(!disposed&&generation==s.Generation)s.Failures++;}
-        catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures++;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
+        catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures++;s.Error=ex.Message;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
         finally{
             if(!disposed&&generation==s.Generation&&s.Failures>=2&&s.Rows.Any(r=>r.IsConnected)){
                 s.Rows=s.Rows.Select(r=>r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}).ToArray();changed();
             }
-            s.Flight=null;
+            s.Flight=null;s.LastMs=watch.Elapsed.TotalMilliseconds;Publish(s);
             if(!disposed)s.Next=generation!=s.Generation?DateTimeOffset.MinValue:DateTimeOffset.UtcNow+
                 TimeSpan.FromSeconds(Math.Min(120,s.Provider.Interval(RingConfig.Current).TotalSeconds*Math.Pow(2,Math.Min(4,s.Failures))));
         }
