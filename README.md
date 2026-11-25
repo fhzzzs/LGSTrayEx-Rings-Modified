@@ -18,7 +18,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 Battery Monitor is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
-**Status:** 2.0.1 development test build; v1.0.0 is the first historical public release. Expanded protocols are pending physical validation. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
+**Status:** 2.0.0 development test build; v1.0.0 is the first historical public release. Expanded protocols are pending physical validation. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
 ## Features
 
