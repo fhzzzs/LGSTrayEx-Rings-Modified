@@ -14,7 +14,11 @@
     <PublishSingleFile>true</PublishSingleFile>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>LGSTray</AssemblyName>
-    <ApplicationIcon>Resources\logo_black.ico</ApplicationIcon>
+    <Product>Battery Monitor</Product>
+    <AssemblyTitle>Battery Monitor</AssemblyTitle>
+    <Description>Wireless device battery monitor; unofficial fork of LGSTrayEx and LGSTrayBattery</Description>
+    <Copyright>Original authors: andyvorld and strain08; modifications by fhzzzs</Copyright>
+    <ApplicationIcon>Resources\BatteryMonitor.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>LGSTrayUI.Program</StartupObject>
   </PropertyGroup>

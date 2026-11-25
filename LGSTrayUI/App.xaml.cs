@@ -67,8 +67,8 @@ public partial class App : Application
         if (!_hasHandle)
         {
             MessageBox.Show(
-                "LGSTray is already running.",
-                "LGSTray",
+                "Battery Monitor is already running.",
+                "Battery Monitor",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information
             );
@@ -127,7 +127,7 @@ public partial class App : Application
         DiagnosticLogger.Initialize(enableLogging, enableVerbose, maxLogLines);
         var buildInfo = NotifyIconViewModel.AssemblyBuildInfo;
         var buildSuffix = buildInfo.Length > 0 ? $" [{buildInfo}]" : "";
-        DiagnosticLogger.Log($"LGSTray {NotifyIconViewModel.AssemblyVersion}{buildSuffix} logging started.");
+        DiagnosticLogger.Log($"Battery Monitor {NotifyIconViewModel.AssemblyVersion}{buildSuffix} logging started.");
         if (enableVerbose)
         {
             DiagnosticLogger.Log("Verbose logging enabled.");
@@ -360,7 +360,7 @@ public partial class App : Application
             MessageBox.Show(
                 $"{message}\n\nCheck that the folder is writable, or move the installation to a " +
                 "user-writable location.",
-                "LGSTray - Diagnostic Logging",
+                "Battery Monitor - Diagnostic Logging",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning
             );
@@ -382,7 +382,7 @@ public partial class App : Application
                     return;
                 }
 
-                string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LGSTrayUI_Crash.txt");
+                string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BatteryMonitor_Crash.txt");
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine($"[{DateTime.Now}] CRASH OCCURRED");
 

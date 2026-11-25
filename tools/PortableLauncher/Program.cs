@@ -20,10 +20,10 @@ internal static class Program
         try
         {
             string folder=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"app");
-            string executable=Path.Combine(folder,"LGSTray.exe");
-            if(!File.Exists(executable)||!File.Exists(Path.Combine(folder,"LGSTrayHID.exe"))||
+            string executable=FindEntry(folder);
+            if(!File.Exists(executable)||!File.Exists(FindWorker(folder))||
                 !File.Exists(Path.Combine(folder,"appsettings.toml"))||!File.Exists(Path.Combine(folder,"hidapi.dll")))
-                throw new FileNotFoundException("Please extract the complete ZIP and keep the app folder beside LGSTray.exe.");
+                throw new FileNotFoundException("Please extract the complete ZIP and keep the app folder beside Battery Monitor.exe.");
             string rollback=null;
             var arguments=new StringBuilder();
             foreach(string arg in args)
@@ -51,16 +51,19 @@ internal static class Program
         }
     }
 
+    private static string FindEntry(string folder){string path=Path.Combine(folder,"Battery Monitor.exe");return File.Exists(path)?path:Path.Combine(folder,"LGSTray.exe");}
+    private static string FindWorker(string folder){string path=Path.Combine(folder,"Battery Monitor HID.exe");return File.Exists(path)?path:Path.Combine(folder,"LGSTrayHID.exe");}
+    private static bool IsEntry(string path){string name=Path.GetFileName(path);return string.Equals(name,"Battery Monitor.exe",StringComparison.OrdinalIgnoreCase)||string.Equals(name,"LGSTray.exe",StringComparison.OrdinalIgnoreCase);}
     private static bool ValidPrevious(string path,string inner)
     {
         try{
             string full=Path.GetFullPath(path);
-            string here=Path.Combine(Directory.GetParent(inner).FullName,"LGSTray.exe");
+            string here=FindEntry(Directory.GetParent(inner).FullName);
             if(string.Equals(full,here,StringComparison.OrdinalIgnoreCase)||!File.Exists(full)||
-                !string.Equals(Path.GetFileName(full),"LGSTray.exe",StringComparison.OrdinalIgnoreCase))return false;
+                !IsEntry(full))return false;
             string dir=Path.GetDirectoryName(full);
             if(Directory.Exists(Path.Combine(dir,"app")))dir=Path.Combine(dir,"app");
-            return File.Exists(Path.Combine(dir,"LGSTray.exe"))&&File.Exists(Path.Combine(dir,"LGSTrayHID.exe"))&&File.Exists(Path.Combine(dir,"appsettings.toml"));
+            return File.Exists(FindEntry(dir))&&File.Exists(FindWorker(dir))&&File.Exists(Path.Combine(dir,"appsettings.toml"));
         }catch{return false;}
     }
     private static int LaunchUpdate(ProcessStartInfo start,string rollback)
@@ -74,7 +77,7 @@ internal static class Program
             var clock=Stopwatch.StartNew();
             while(clock.ElapsedMilliseconds<45000&&!child.HasExited){
                 if(Ready(marker,child.Id)){
-                    UpdateStartup(rollback,Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"LGSTray.exe"));
+                    UpdateStartup(rollback,FindEntry(AppDomain.CurrentDomain.BaseDirectory));
                     return 0;
                 }
                 Thread.Sleep(150);
@@ -103,10 +106,13 @@ internal static class Program
         try{
             using(var key=Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",true)){
                 if(key==null)return;
-                string value=key.GetValue("LGSTrayGUI") as string;
-                // Do not enable startup or change an unrelated installation.
-                if(value!=null&&string.Equals(value.Trim().Trim('"'),previous,StringComparison.OrdinalIgnoreCase))
-                    key.SetValue("LGSTrayGUI","\""+next+"\"");
+                foreach(string name in new[]{"Battery Monitor","LGSTrayGUI"}){
+                    string value=key.GetValue(name) as string;
+                    if(value!=null&&string.Equals(value.Trim().Trim('"'),previous,StringComparison.OrdinalIgnoreCase)){
+                        key.SetValue("Battery Monitor","\""+next+"\"");
+                        if(name!="Battery Monitor")key.DeleteValue(name,false);
+                    }
+                }
             }
         }catch{}
     }

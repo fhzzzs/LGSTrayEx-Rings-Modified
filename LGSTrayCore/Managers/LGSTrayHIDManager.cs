@@ -113,7 +113,8 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         _daemonCts = new();
 
         using Process proc = new();
-        string daemonPath = Path.Combine(AppContext.BaseDirectory, "LGSTrayHID.exe");
+        string daemonPath = Path.Combine(AppContext.BaseDirectory, "Battery Monitor HID.exe");
+        if(!File.Exists(daemonPath))daemonPath=Path.Combine(AppContext.BaseDirectory,"LGSTrayHID.exe");
         proc.StartInfo = new()
         {
             RedirectStandardError = false,
@@ -139,10 +140,10 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
             DiagnosticLogger.LogError($"[LGSTrayHIDManager]: HID daemon blocked by OS (ERROR_CANCELLED).");
             _ = MessageBox(
                 nint.Zero,
-                $"Windows blocked LGSTrayHID.exe from starting (ERROR_CANCELLED).\n\n" +
+                $"Windows blocked the Battery Monitor HID worker from starting (ERROR_CANCELLED).\n\n" +
                 $"You probably need to unblock the app files in Powershell:\n" +
                 $"Get-ChildItem \"{AppContext.BaseDirectory}\" | Unblock-File\n",
-                "LGSTray — HID daemon unable to start",
+                "Battery Monitor — HID daemon unable to start",
                 0x10 /* MB_ICONERROR */
             );
             _daemonCts.Dispose();

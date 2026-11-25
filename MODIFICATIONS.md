@@ -1,11 +1,11 @@
-# LGSTrayEx Rings – unofficial modification (2026-11-23)
+# Battery Monitor – unofficial modification (2026-11-23)
 Base: strain08/LGSTrayEx 3.2.6, a fork of andyvorld/LGSTrayBattery. Original notices and GPL-3.0 license retained. This package includes source. No code from ZGMFX01A/Wireless-Device-Battery-Monitor is included in the new changes. Original authors do not endorse this build.
 
 Implemented in source, not Windows-compiled or hardware-verified: WPF custom settings window, shared preview/taskbar ring renderer, RGB/HEX/alpha settings, local JSON save/import/export, configurable layout, online/offline animations, staggered spring movement, device ordering via drag-and-drop or up/down buttons, hide/rename, multiple notification thresholds with intervals and per-device overrides, WGI battery reports with XInput fallback, BLE polling, full hit rectangle, global Ctrl+Alt+B settings shortcut. WGI percent is computed from reported capacities, not invented. Some providers may return unknown level. Notifications are WPF popup windows, not Windows Notification Center. Existing non-battery notifications remain controlled by upstream TOML.
 
 Limitations: the current right-side strip is a safe taskbar overlay. When native buttons overlap its area, it hides. UI Automation support varies by Windows release; primary display only. Undo/redo, separate automatic theme switching, native notifications, complete app update system and true taskbar reflow are not implemented. G7 Pro precise percent, cross-protocol identity matching, all animation timings and hit testing require testing on physical Windows. The preview uses simulated devices and the same renderer/animation class. XInput fallback is used only when no WGI gamepads are found, avoiding duplicates at the expense of possible missing XInput-only devices in mixed configurations. SDK install requires internet.
 
-Build on Windows x64: double-click BUILD-RINGS.cmd; it detects the x64 .NET 10 SDK and installs a local copy from Microsoft's official site if missing. Self-contained portable output: bin/Release/Publish/win-x64/Standalone and bin/LGSTrayEx-Rings-Portable-x64.zip. Optional BUILD-INSTALLER.cmd builds the existing WiX MSI with a separate upgrade identity; untested. Close prior LGSTray processes before running. Settings persist under %LOCALAPPDATA%/LGSTray/rings-settings.json. For GPL redistribution, distribute corresponding source and license alongside binaries. No EXE is supplied in this source ZIP.
+Build on Windows x64: double-click BUILD-RINGS.cmd; it detects the x64 .NET 10 SDK and installs a local copy from Microsoft's official site if missing. Self-contained portable output: bin/Release/Publish/win-x64/Standalone and bin/Battery-Monitor-Windows-x64.zip. Optional BUILD-INSTALLER.cmd builds the existing WiX MSI with a separate upgrade identity; untested. Close prior LGSTray processes before running. Settings persist under %LOCALAPPDATA%/LGSTray/rings-settings.json. For GPL redistribution, distribute corresponding source and license alongside binaries. No EXE is supplied in this source ZIP.
 
 ## rings.2 theme hotfix
 Removed hard-coded light settings background and enabled window-local Fluent System theme; secondary text uses the Fluent theme resource. Preview buttons use a full-size BatteryRing control template matching the taskbar rendering approach. No changes to saved settings or device protocols. Windows visual verification is still required.
@@ -37,3 +37,6 @@ Modified by fhzzzs (https://github.com/fhzzzs). Charging ring effects, drag reor
 - Removed obsolete alignment preferences, native layout code, build requirements and related tests.
 - Device identity grouping, source selection, lifecycle, notifications, versioned settings and update staging are retained.
 - Prior experimental versions remain in Git history; see the current README and INSTALL.md for supported behavior.
+
+## v1.0.3 — public branding and direct ZIP
+Public product and executable names are Battery Monitor. Original upstream credits, license, internal assembly identities and the existing settings directory remain intact.

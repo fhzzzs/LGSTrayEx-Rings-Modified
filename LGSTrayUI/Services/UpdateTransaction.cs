@@ -38,8 +38,10 @@ internal static class UpdateTransaction
         if(!Regex.IsMatch(Path.GetFileName(full),@"^rings-[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{8}$")||
             !File.Exists(MarkerPath(full)))return false;
         if((File.GetAttributes(full)&FileAttributes.ReparsePoint)!=0)return false;
-        string entry=Path.Combine(full,"LGSTray.exe");
-        if(string.Equals(entry,current,StringComparison.OrdinalIgnoreCase)||string.Equals(entry,previous,StringComparison.OrdinalIgnoreCase))return false;
+        foreach(var name in new[]{PortableLayout.EntryName,PortableLayout.LegacyEntryName}){
+            string entry=Path.Combine(full,name);
+            if(string.Equals(entry,current,StringComparison.OrdinalIgnoreCase)||string.Equals(entry,previous,StringComparison.OrdinalIgnoreCase))return false;
+        }
         return now-Directory.GetLastWriteTimeUtc(full)>TimeSpan.FromDays(7);
     }
     internal static int CleanOldVersions(string root,string current,string? previous,DateTimeOffset now)

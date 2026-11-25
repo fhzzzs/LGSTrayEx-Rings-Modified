@@ -10,6 +10,11 @@ public class RingsUpdateTests{
 
     [Theory][InlineData("rings-1.0.0",true)][InlineData("rings-10.0.1",true)][InlineData("rings-11.0.0",true)][InlineData("v10.0.1",false)][InlineData("rings-10.0.1-beta",false)][InlineData("rings-../10.0.1",false)]
     public void OnlyReleaseTagsAreAccepted(string tag,bool expected)=>Assert.Equal(expected,RingsUpdateService.TryTag(tag,out _));
+    [Fact]public void BrandedReleaseAssetIsTrusted(){
+        const string url="https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases/download/rings-1.0.3/Battery-Monitor-Windows-x64.zip";
+        Assert.True(RingsUpdateService.IsTrustedAsset("rings-1.0.3",url));
+        Assert.False(RingsUpdateService.IsTrustedAsset("rings-1.0.4",url));
+    }
     [Fact]public void OnlyRepositoryReleaseAssetIsTrusted(){
         const string path="/fhzzzs/LGSTrayEx-Rings-Modified/releases/download/rings-10.0.1/LGSTrayEx-Rings-Portable-x64.zip";
         Assert.True(RingsUpdateService.IsTrustedAsset("rings-10.0.1","https://github.com"+path));

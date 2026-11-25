@@ -1,6 +1,6 @@
 <div align="center">
 
-# LGSTrayEx Rings
+# Battery Monitor
 
 **A customizable wireless-device battery monitor for Windows 11**
 
@@ -16,7 +16,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 ## Overview
 
-LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
+Battery Monitor is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
 **Status:** v1.0.0 is the first public release, based on the Rings 15 development milestone. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
@@ -38,14 +38,14 @@ LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless m
 ## Download and run
 
 1. Open [GitHub Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases).
-2. Download `LGSTrayEx-Rings-Portable-x64.zip` from the latest release.
-3. Extract the entire ZIP and run the outer `LGSTray.exe`. Keep `app/` beside it.
+2. Download `Battery-Monitor-Windows-x64.zip` from the latest release.
+3. Extract the entire ZIP and run the outer `Battery Monitor.exe`. Keep `app/` beside it.
 
-Keep the companion executables, DLLs and configuration files together. Exit previous LGSTray instances first.
+Keep the companion executables, DLLs and configuration files together. Exit previous Battery Monitor or legacy LGSTray instances first.
 
 **Requirements:** Windows 11 x64, a writable application folder and supported hardware. No separate .NET runtime, SDK, Visual Studio Build Tools or Windhawk installation is intended for users of the prebuilt package.
 
-Development builds are also available from successful [GitHub Actions](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml) runs. Artifacts can expire. Rings 15 development users must manually install v1.0.0 once; the public version numbering has restarted. The GitHub Code → Download ZIP archive contains source code, not a ready-to-run EXE.
+Development builds are also available from successful [GitHub Actions](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml) runs. Artifacts are direct ZIP downloads (extract once); they can expire. Rings 15 development users must manually install v1.0.0 once; the public version numbering has restarted. Users of v1.0.2 and older must manually install the renamed package once; existing settings are preserved. The GitHub Code → Download ZIP archive contains source code, not a ready-to-run EXE.
 
 ## Using the application
 
@@ -91,7 +91,7 @@ BUILD-RINGS.cmd -Test
 
 The build detects .NET 10 SDK, .NET project dependencies. Missing tools may require installation and network access. The same build runs in GitHub Actions.
 
-Output: `bin/LGSTrayEx-Rings-Portable-x64.zip`
+Output: `bin/Battery-Monitor-Windows-x64.zip`
 
 See [installation and build notes](INSTALL.md).
 
@@ -113,7 +113,7 @@ This is an unofficial modification, not endorsed by Logitech, ASUS, Microsoft, A
 
 ## 中文说明
 
-LGSTrayEx Rings 是一款 Windows 11 无线设备电量监控工具，以圆环形式在任务栏展示鼠标、耳机、键盘和手柄的电量。
+Battery Monitor 是一款 Windows 11 无线设备电量监控工具，以圆环形式在任务栏展示鼠标、耳机、键盘和手柄的电量。
 
 - 支持自定义圆环颜色、大小、间距、充电流光和上下线动画。
 - 支持自动发现设备、可靠身份及唯一罗技跨来源型号自动合并、拖拽排序、隐藏及重命名。
@@ -121,8 +121,8 @@ LGSTrayEx Rings 是一款 Windows 11 无线设备电量监控工具，以圆环�
 - ROG Harpe Ace Mini OMNI 读取在后台自动执行，无须专用设置开关。
 - 仅在主任务栏右侧安全空位显示；空间不足时隐藏。
 
-**下载方式：** 前往 [GitHub Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases)，下载 LGSTrayEx-Rings-Portable-x64.zip，完整解压后运行最外层 LGSTray.exe。普通用户不需要安装 .NET SDK、Visual Studio Build Tools 或 Windhawk。
+**下载方式：** 前往 [GitHub Releases](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/releases)，下载 Battery-Monitor-Windows-x64.zip，完整解压后运行最外层 Battery Monitor.exe。普通用户不需要安装 .NET SDK、Visual Studio Build Tools 或 Windhawk。
 
-v1.0.0 是基于 Rings 15 的首次公开发布版本。旧开发版需要手动升级一次；具体设备兼容性及任务栏布局仍需实机验证。欢迎通过 Issues 反馈问题。
+v1.0.0 是基于 Rings 15 的首次公开发布版本。1.0.2 及以前的旧版本需要手动下载新版 ZIP 升级一次；具体设备兼容性及任务栏布局仍需实机验证。欢迎通过 Issues 反馈问题。
 
-**作者：** [fhzzzs](https://github.com/fhzzzs) · GPL-3.0 · 保留原项目版权与署名。
+**修改者：** [fhzzzs](https://github.com/fhzzzs) · GPL-3.0 · 保留原项目版权与署名。

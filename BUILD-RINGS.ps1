@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='1.0.2')
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='1.0.3')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }
@@ -30,7 +30,7 @@ if($Test) {
   if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
 }
 $out=Join-Path $PSScriptRoot 'bin\Release\Publish\win-x64\Standalone'
-$zip=Join-Path $PSScriptRoot 'bin\LGSTrayEx-Rings-Portable-x64.zip'
+$zip=Join-Path $PSScriptRoot 'bin\Battery-Monitor-Windows-x64.zip'
 # Remove only the known generated output folder. Never remove user settings or SDK.
 if(Test-Path $out){Remove-Item -LiteralPath $out -Recurse -Force}
 if(Test-Path $zip){Remove-Item -LiteralPath $zip -Force}
@@ -44,27 +44,43 @@ foreach($project in @('LGSTrayHID','LGSTrayUI')) {
 foreach($file in @('LGSTray.exe','LGSTrayHID.exe','hidapi.dll','appsettings.toml')) {
   if (!(Test-Path (Join-Path $app $file) -PathType Leaf)) { throw "Missing portable file: $file" }
 }
+# Keep internal assembly identities, but give the published single-file executables their public names.
+Move-Item -LiteralPath (Join-Path $app 'LGSTray.exe') -Destination (Join-Path $app 'Battery Monitor.exe')
+Move-Item -LiteralPath (Join-Path $app 'LGSTrayHID.exe') -Destination (Join-Path $app 'Battery Monitor HID.exe')
 # Keep debug symbols out of the end-user package; source builds still generate them.
 Get-ChildItem -LiteralPath $app -Filter '*.pdb' -Recurse -File | Remove-Item -Force
 $docs=Join-Path $app 'docs'
 New-Item -ItemType Directory -Force $docs | Out-Null
 Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $docs -Force
 @'
-Battery Monitor - Rings (Windows 11 x64)
-Extract the complete ZIP, then launch the outer LGSTray.exe.
+Battery Monitor (Windows 11 x64)
+Extract the complete ZIP, then launch the outer Battery Monitor.exe.
 Keep the app folder beside the launcher. The .NET 10 desktop runtime and HID worker are bundled.
 Configuration: app\appsettings.toml. User settings/logs: %LOCALAPPDATA%\LGSTray.
+Unofficial fork of strain08/LGSTrayEx, originally andyvorld/LGSTrayBattery; modified by fhzzzs.
 Source and license: see LICENSE and MODIFICATIONS.md in this folder.
 '@ | Set-Content (Join-Path $docs 'START-HERE.txt') -Encoding UTF8
 # Windows 11 includes .NET Framework 4.x. Compile a tiny launcher using its inbox
 # compiler; no duplicate .NET 10 runtime and no C++/Explorer build dependency.
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if(!(Test-Path $csc -PathType Leaf)){throw 'Windows .NET Framework compiler missing.'}
-$entry=Join-Path $out 'LGSTray.exe'
+$entry=Join-Path $out 'Battery Monitor.exe'
 $icon=Join-Path $PSScriptRoot 'LGSTrayUI\Resources\BatteryMonitor.ico'
 $launcher=Join-Path $PSScriptRoot 'tools\PortableLauncher\Program.cs'
-& $csc /nologo /target:winexe /platform:x64 /optimize+ /debug- "/win32icon:$icon" "/out:$entry" $launcher
-if($LASTEXITCODE -ne 0 -or !(Test-Path $entry -PathType Leaf)){throw 'Portable launcher build failed.'}
+$metadata=Join-Path $env:TEMP ('battery-monitor-assembly-'+[Guid]::NewGuid().ToString('N')+'.cs')
+@"
+using System.Reflection;
+[assembly: AssemblyTitle("Battery Monitor")]
+[assembly: AssemblyProduct("Battery Monitor")]
+[assembly: AssemblyDescription("Wireless device battery monitor; unofficial fork of LGSTrayEx and LGSTrayBattery")]
+[assembly: AssemblyCopyright("Original authors: andyvorld and strain08; modifications by fhzzzs")]
+[assembly: AssemblyVersion("$version.0")]
+[assembly: AssemblyFileVersion("$version.0")]
+"@ | Set-Content -LiteralPath $metadata -Encoding UTF8
+& $csc /nologo /target:winexe /platform:x64 /optimize+ /debug- "/win32icon:$icon" "/out:$entry" $launcher $metadata
+$launcherExit=$LASTEXITCODE
+Remove-Item -LiteralPath $metadata -Force
+if($launcherExit -ne 0 -or !(Test-Path $entry -PathType Leaf)){throw 'Portable launcher build failed.'}
 $rootItems=@(Get-ChildItem -LiteralPath $out -Force)
 if($rootItems.Count -ne 2 -or !(Test-Path $app -PathType Container)){throw 'Unexpected portable root layout.'}
 # Launch from a different working directory, verify forwarding and dependency

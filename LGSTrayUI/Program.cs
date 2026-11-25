@@ -23,7 +23,7 @@ namespace LGSTrayUI
                     // runtime, native HID library, settings and worker executable.
                     string folder=AppContext.BaseDirectory;
                     if(!File.Exists(Path.Combine(folder,"appsettings.toml"))||
-                       !File.Exists(Path.Combine(folder,"LGSTrayHID.exe"))||
+                       !File.Exists(PortableLayout.FindWorker(folder))||
                        !System.Runtime.InteropServices.NativeLibrary.TryLoad(Path.Combine(folder,"hidapi.dll"),out var library)){
                         Environment.ExitCode=4;return;
                     }
@@ -37,7 +37,7 @@ namespace LGSTrayUI
                 try
                 {
                     var unixTime = DateTimeOffset.Now.ToUnixTimeSeconds();
-                    string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"LGSTrayUI_Crash_{unixTime}.txt");
+                    string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"BatteryMonitor_Crash_{unixTime}.txt");
                     var sb = new System.Text.StringBuilder();
                     sb.AppendLine($"[{DateTime.Now}] STARTUP CRASH OCCURRED");
 

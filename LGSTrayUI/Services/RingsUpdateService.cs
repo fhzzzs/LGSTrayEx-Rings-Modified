@@ -19,12 +19,13 @@ internal sealed record RingsRelease(string Tag,Version Version,Uri Download,long
 internal static class RingsUpdateService
 {
     private const string Repo="fhzzzs/LGSTrayEx-Rings-Modified";
-    internal const string Asset="LGSTrayEx-Rings-Portable-x64.zip";
+    internal const string Asset="Battery-Monitor-Windows-x64.zip";
+    internal const string LegacyAsset="LGSTrayEx-Rings-Portable-x64.zip";
     private const long MaxDownload=350L*1024*1024,MaxExpanded=900L*1024*1024;
     internal static readonly string Versions=Path.Combine(AppDataPaths.LocalAppDataDir,"versions");
     private static readonly string Previous=Path.Combine(AppDataPaths.LocalAppDataDir,"rings-previous-version.json");
     private static readonly HttpClient Http=new(){Timeout=Timeout.InfiniteTimeSpan};
-    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("LGSTrayEx-Rings-Update/1.0.0");}
+    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("Battery-Monitor-Update/1.0.3");}
     internal static Version Current{
         get{
             var s=Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion??"";
@@ -34,7 +35,7 @@ internal static class RingsUpdateService
     internal static Version ParseBuildVersion(string value){
         int pos=value.IndexOf("-rings.",StringComparison.Ordinal);
         var version=(pos>=0?value[(pos+7)..]:value).Split('+')[0];
-        return Version.TryParse(version,out var parsed)?parsed:new Version(1,0,2);
+        return Version.TryParse(version,out var parsed)?parsed:new Version(1,0,3);
     }
     internal static bool TryTag(string? tag,out Version version){
         version=new Version(0,0,0);
@@ -43,11 +44,11 @@ internal static class RingsUpdateService
         version=parsed;return true;
     }
     internal static bool IsTrustedAsset(string tag,string? url)
-        =>TryTag(tag,out _)&&string.Equals(url,$"https://github.com/{Repo}/releases/download/{tag}/{Asset}",StringComparison.Ordinal);
+        =>TryTag(tag,out _)&&(string.Equals(url,$"https://github.com/{Repo}/releases/download/{tag}/{Asset}",StringComparison.Ordinal)||string.Equals(url,$"https://github.com/{Repo}/releases/download/{tag}/{LegacyAsset}",StringComparison.Ordinal));
     internal static string? PreviousExecutable(){
         try{
             var path=JsonSerializer.Deserialize<string>(File.ReadAllText(Previous));
-            return path!=null&&File.Exists(path)&&Path.GetFileName(path).Equals("LGSTray.exe",StringComparison.OrdinalIgnoreCase)?path:null;
+            return path!=null&&File.Exists(path)&&PortableLayout.IsEntryName(Path.GetFileName(path))?path:null;
         }catch{return null;}
     }
     internal static void RememberPrevious(string path)=>RingSettingsStore.WriteAtomic(Previous,JsonSerializer.Serialize(path));
@@ -61,7 +62,7 @@ internal static class RingsUpdateService
         if(!TryTag(tag,out var version)||version<=Current)return null;
         if(root.GetProperty("draft").GetBoolean()||root.GetProperty("prerelease").GetBoolean())return null;
         foreach(var asset in root.GetProperty("assets").EnumerateArray()){
-            if(asset.GetProperty("name").GetString()!=Asset)continue;
+            if(asset.GetProperty("name").GetString() is not (Asset or LegacyAsset))continue;
             string? url=asset.GetProperty("browser_download_url").GetString();
             long size=asset.GetProperty("size").GetInt64();
             string? digest=asset.TryGetProperty("digest",out var d)?d.GetString():null;
@@ -102,7 +103,7 @@ internal static class RingsUpdateService
             UpdateTransaction.PreserveConfiguration(AppContext.BaseDirectory,temp);
             File.WriteAllText(UpdateTransaction.MarkerPath(temp),release.Tag);
             Directory.Move(temp,destination);
-            return Path.Combine(destination,"LGSTray.exe");
+            return PortableLayout.FindEntry(destination);
         }finally{
             try{if(File.Exists(zip))File.Delete(zip);}catch{}
             try{if(Directory.Exists(temp))Directory.Delete(temp,true);}catch{}

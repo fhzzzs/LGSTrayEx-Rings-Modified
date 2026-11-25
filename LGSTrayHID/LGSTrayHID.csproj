@@ -14,6 +14,10 @@
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Product>Battery Monitor</Product>
+    <AssemblyTitle>Battery Monitor HID Worker</AssemblyTitle>
+    <Description>Battery Monitor hardware service</Description>
+    <Copyright>Original authors: andyvorld and strain08; modifications by fhzzzs</Copyright>
   </PropertyGroup>
 
   <ItemGroup>

@@ -77,7 +77,8 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
 
 
     private const string AutoStartRegKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string AutoStartRegKeyValue = "LGSTrayGUI";
+    private const string AutoStartRegKeyValue = "Battery Monitor";
+    private const string LegacyAutoStartRegKeyValue = "LGSTrayGUI";
     private bool? _autoStart = null;
     public bool AutoStart
     {
@@ -86,7 +87,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
             if (_autoStart == null)
             {
                 using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, true);
-                _autoStart = registryKey?.GetValue(AutoStartRegKeyValue) != null;
+                _autoStart = registryKey?.GetValue(AutoStartRegKeyValue) != null || registryKey?.GetValue(LegacyAutoStartRegKeyValue) != null;
             }
 
             return _autoStart ?? false;
@@ -103,10 +104,12 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
             if (value)
             {
                 registryKey.SetValue(AutoStartRegKeyValue, "\""+PortableLayout.CurrentEntry+"\"");
+                registryKey.DeleteValue(LegacyAutoStartRegKeyValue, false);
             }
             else
             {
                 registryKey.DeleteValue(AutoStartRegKeyValue, false);
+                registryKey.DeleteValue(LegacyAutoStartRegKeyValue, false);
             }
 
             _autoStart = value;
