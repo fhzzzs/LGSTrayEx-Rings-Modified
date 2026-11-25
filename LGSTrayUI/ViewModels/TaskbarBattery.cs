@@ -49,9 +49,10 @@ internal sealed record TaskbarBattery
     public bool Offline=>Connection==ConnectionState.Disconnected;
     public bool IsConnected=>Connection==ConnectionState.Connected;
     public TaskbarBattery WithConnection(ConnectionState state)=>this with{Connection=state};
+    public bool Estimated {get;init;}
     public bool Stale {get;init;}
     public int? LastKnownLevel {get;init;}
-    public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?ReadingQuality.Exact:
+    public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?(Estimated?ReadingQuality.Band:ReadingQuality.Exact):
         ShortLabel is "Empty" or "Low" or "Med" or "Full"?ReadingQuality.Band:ReadingQuality.Unknown;
     public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value && value is >=0 and <=100 ? $"{value}%" : "—");
     public int BarValue => Level is >=0 and <=100 ? Level.Value : 0;

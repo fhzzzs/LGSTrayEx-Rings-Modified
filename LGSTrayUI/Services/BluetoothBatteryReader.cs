@@ -22,14 +22,7 @@ internal static class BluetoothBatteryReader
             if (subcategory == 2) return DeviceType.Mouse;
             if (subcategory is 3 or 4) return DeviceType.Gamepad;
         }
-        string n = name.ToLowerInvariant();
-        if (n.Contains("gamesir") || n.Contains("gamepad") || n.Contains("controller") || n.Contains("dualshock") || n.Contains("dualsense")) return DeviceType.Gamepad;
-        if (n.Contains("g735")) return DeviceType.Headset;
-        if (n.Contains("harpe ace mini")) return DeviceType.Mouse;
-        if (n.Contains("keyboard")) return DeviceType.Keyboard;
-        if (n.Contains("mouse")) return DeviceType.Mouse;
-        if (n.Contains("headset") || n.Contains("headphone") || n.Contains("earbud") || n.Contains("airpods")) return DeviceType.Headset;
-        return null;
+        return PeripheralCatalog.NamedType(name);
     }
 
     public static async Task<IReadOnlyList<TaskbarBattery>> ReadAsync(CancellationToken cancellationToken)

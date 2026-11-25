@@ -26,7 +26,7 @@ internal static class GipBatteryReader
                 // G7 Pro uses the raw Windows Gaming Input battery report.
                 // No vendor writes, driver replacement or mode changes.
                 BatteryReport? report=null;string route="raw";
-                if(ControllerIdentity.IsG7(vid,pid)||gamepad==null){
+                if(ControllerIdentity.RawControllerAllowed(vid,pid)||gamepad==null){
                     try{report=raw.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} raw error {ex.GetType().Name}");}
                 }
                 int? Level(BatteryReport? r)=>r==null||r.Status==BatteryStatus.NotPresent?null:CapacityPercent(r.FullChargeCapacityInMilliwattHours,r.RemainingCapacityInMilliwattHours);
@@ -45,10 +45,10 @@ internal static class GipBatteryReader
                 try{var raw=RawGameController.FromGameController(controller);if(raw!=null)Add(raw,controller);}
                 catch(Exception ex){DiagnosticLogger.LogWarning("GIP controller discovery: "+ex.Message);}
             }
-            // Only add raw-only devices with the verified G7 Pro VID/PID.
+            // Only add raw-only devices with known controller VID/PID.
             // Do not misclassify arbitrary raw joysticks, mice or vendor interfaces.
             foreach(var raw in RawGameController.RawGameControllers)
-                if(ControllerIdentity.IsG7(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null);
+                if(ControllerIdentity.RawControllerAllowed(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null);
         }catch(Exception ex){DiagnosticLogger.LogWarning("GIP: "+ex.Message);throw;}
         finally{System.Threading.Volatile.Write(ref diagnostics,notes.Count==0?"No active controllers":string.Join("; ",notes));}
         return rows;

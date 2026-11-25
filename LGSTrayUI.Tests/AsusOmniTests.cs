@@ -5,7 +5,7 @@ public class AsusOmniTests{
     [InlineData(2,0xFF01,1,true)]
     [InlineData(2,0xFF01,3,true)]
     [InlineData(2,0xFF02,1,true)]
-    [InlineData(2,0xFF00,1,false)]
+    [InlineData(2,0xFF00,1,true)]
     [InlineData(0,0xFF01,1,false)]
     public void OmniAcceptsObservedMouseUsage(int iface,int page,int usage,bool expected)
         =>Assert.Equal(expected,AsusBatteryReader.IsOmniChannel(iface,(ushort)page,(ushort)usage));

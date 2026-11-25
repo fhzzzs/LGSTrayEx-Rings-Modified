@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='1.0.4')
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='2.0.0')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }
@@ -51,7 +51,7 @@ Move-Item -LiteralPath (Join-Path $app 'LGSTrayHID.exe') -Destination (Join-Path
 Get-ChildItem -LiteralPath $app -Filter '*.pdb' -Recurse -File | Remove-Item -Force
 $docs=Join-Path $app 'docs'
 New-Item -ItemType Directory -Force $docs | Out-Null
-Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $docs -Force
+Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md,DEVICE-COMPATIBILITY.md,MEASURE-BATTERY-MONITOR.ps1 -Destination $docs -Force
 @'
 Battery Monitor (Windows 11 x64)
 Extract the complete ZIP, then launch the outer Battery Monitor.exe.

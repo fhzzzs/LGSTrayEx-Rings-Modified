@@ -7,7 +7,20 @@ internal static class ControllerIdentity
     internal static string Clean(string? value)=>(value??"").Replace("\0","");
     internal static bool IsG7(ushort vid,ushort pid)=>vid==0x3537&&pid==0x10A9;
     internal static bool IsG7(TaskbarBattery d)=>ControllerAliasMatcher.IsGip(d)&&IsG7(d.HardwareVendorId,d.HardwareProductId);
-    internal static string Name(ushort vid,ushort pid,string fallback)=>IsG7(vid,pid)?"GameSir G7 Pro":Clean(fallback);
+    internal static string? KnownName(ushort vid,ushort pid)=>(vid,pid) switch{
+        (0x3537,0x10A9)=>"GameSir G7 Pro",
+        (0x054C,0x0CE6)=>"Sony DualSense",
+        (0x054C,0x05C4) or (0x054C,0x09CC)=>"Sony DualShock 4",
+        (0x057E,0x2006)=>"Nintendo Joy-Con (L)",
+        (0x057E,0x2007)=>"Nintendo Joy-Con (R)",
+        (0x057E,0x2009)=>"Nintendo Switch Pro Controller",
+        (0x2DC8,0x3820)=>"8BitDo N30 Pro",
+        (0x2DC8,0x6003)=>"8BitDo Pro 2",
+        _=>null
+    };
+    internal static string Name(ushort vid,ushort pid,string fallback)=>KnownName(vid,pid)??Clean(fallback);
+    internal static bool RawControllerAllowed(ushort vid,ushort pid)=>KnownName(vid,pid)!=null;
+
     internal static TaskbarBattery Normalize(TaskbarBattery row)=>row with{Key=Clean(row.Key),Name=Name(row.HardwareVendorId,row.HardwareProductId,row.Name),PhysicalId=row.PhysicalId==null?null:Clean(row.PhysicalId)};
     internal static void Migrate(RingPreferences c){
         void Map<T>(Dictionary<string,T> map,Func<T,T> value){

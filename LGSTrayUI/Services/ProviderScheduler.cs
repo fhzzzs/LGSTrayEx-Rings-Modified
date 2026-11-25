@@ -32,7 +32,7 @@ internal sealed class ProviderScheduler:IDisposable
         internal IReadOnlyList<TaskbarBattery> Rows=[];
         internal DateTimeOffset Next;
         internal CancellationTokenSource? Flight;
-        internal int Generation,Failures;
+        internal int Generation,Failures,StablePolls;
         internal bool Enabled;
         internal double LastMs;
         internal DateTimeOffset Updated;
@@ -59,7 +59,7 @@ internal sealed class ProviderScheduler:IDisposable
     private void Tick(object? sender,EventArgs e)=>Poll();
     internal void Rescan(string? id=null)
     {
-        foreach(var s in slots.Where(s=>id==null||s.Provider.Id==id)){s.Generation++;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}
+        foreach(var s in slots.Where(s=>id==null||s.Provider.Id==id)){s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}
         Poll();
     }
     internal void Poll()
@@ -74,24 +74,40 @@ internal sealed class ProviderScheduler:IDisposable
         var next=slots.Where(s=>s.Enabled&&s.Flight==null).Select(s=>(s.Next-now).TotalMilliseconds).DefaultIfEmpty(1000).Min();
         timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,2000));
     }
+    internal static TimeSpan AdaptiveInterval(string id,TimeSpan period,int stablePolls)
+        => (id is "ble" or "asus")&&stablePolls>=3?TimeSpan.FromSeconds(Math.Min(120,period.TotalSeconds*2)):period;
+    internal static bool SameReadings(IReadOnlyList<TaskbarBattery> a,IReadOnlyList<TaskbarBattery> b){
+        if(a.Count!=b.Count)return false;
+        for(int i=0;i<a.Count;i++)if((a[i] with{Updated=b[i].Updated})!=b[i])return false;
+        return true;
+    }
     private async Task Run(Slot s)
     {
         int generation=s.Generation;using var cts=new CancellationTokenSource(s.Provider.Timeout);
         s.Flight=cts;var watch=System.Diagnostics.Stopwatch.StartNew();Publish(s);
+        Task<IReadOnlyList<TaskbarBattery>>? work=null;
         try{
-            var rows=await s.Provider.ReadAsync(cts.Token);
+            work=s.Provider.ReadAsync(cts.Token);
+            var rows=await work.WaitAsync(cts.Token);
             cts.Token.ThrowIfCancellationRequested();
             if(disposed||generation!=s.Generation)return;
+            s.StablePolls=SameReadings(s.Rows,rows)?Math.Min(100,s.StablePolls+1):0;
             s.Failures=0;s.Error=null;s.Updated=DateTimeOffset.UtcNow;if(!s.Rows.SequenceEqual(rows)){s.Rows=rows;changed();}
         }catch(OperationCanceledException){if(!disposed&&generation==s.Generation){s.Failures=Math.Min(s.Failures+1,100);s.Error="Scan timed out";}}
         catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures=Math.Min(s.Failures+1,100);s.Error=ex.Message;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
         finally{
-            if(!disposed&&generation==s.Generation&&s.Failures>=2&&s.Rows.Any(r=>r.IsConnected)){
+            bool lingering=work!=null&&!work.IsCompleted;
+            if(s.Failures>0)s.StablePolls=0;
+            if(!disposed&&generation==s.Generation&&(s.Failures>=2||lingering&&s.Failures>0)&&s.Rows.Any(r=>r.IsConnected)){
                 s.Rows=s.Rows.Select(r=>r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}).ToArray();changed();
             }
-            s.Flight=null;s.LastMs=watch.Elapsed.TotalMilliseconds;Publish(s);
+            s.LastMs=watch.Elapsed.TotalMilliseconds;Publish(s);
+            // A native I/O call may ignore cancellation. Publish the timeout
+            // immediately but never start overlapping calls on that provider.
+            if(lingering)try{await work!;}catch{}
+            s.Flight=null;Publish(s);
             if(!disposed)s.Next=generation!=s.Generation?DateTimeOffset.MinValue:DateTimeOffset.UtcNow+
-                NextDelay(s.Provider.Interval(RingConfig.Current),s.Failures,s.Rows.Any(r=>r.IsConnected));
+                NextDelay(AdaptiveInterval(s.Provider.Id,s.Provider.Interval(RingConfig.Current),s.StablePolls),s.Failures,s.Rows.Any(r=>r.IsConnected));
         }
     }
     public void Dispose(){if(disposed)return;disposed=true;timer.Stop();timer.Tick-=Tick;foreach(var s in slots)s.Flight?.Cancel();}

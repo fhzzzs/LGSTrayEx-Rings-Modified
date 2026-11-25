@@ -21,6 +21,7 @@ public class HidppDevice
 
 
     private IBatteryFeature? _batteryFeature;
+    private int _featureReadFailures;
     private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
     private int _consecutivePollFailures = 0;
 
@@ -420,7 +421,31 @@ public class HidppDevice
             return false;
         }
         
-        var ret = await _batteryFeature.GetBatteryAsync(this);
+        var currentFeature=_batteryFeature;
+        var ret = await currentFeature.GetBatteryAsync(this);
+        if(ret is { } reading && (!double.IsFinite(reading.batteryPercentage)||reading.batteryPercentage<0||reading.batteryPercentage>100))ret=null;
+        if(ret==null){
+            // A second consecutive failure triggers at most one alternate
+            // advertised feature per poll. No probing undocumented registers.
+            _featureReadFailures++;
+            if(_featureReadFailures>=2){
+                var candidates=BatteryFeatureFactory.GetCandidates(FeatureMap);
+                int index=Array.IndexOf(candidates.ToArray(),currentFeature);
+                if(candidates.Count>1){
+                    var alternate=candidates[(index+1)%candidates.Count];
+                    var other=await alternate.GetBatteryAsync(this);
+                    if(other is { } sample&&double.IsFinite(sample.batteryPercentage)&&sample.batteryPercentage>=0&&sample.batteryPercentage<=100){
+                        _batteryFeature=alternate;_batteryFeatureIndex=FeatureMap[alternate.FeatureId];ret=other;
+                        DiagnosticLogger.Log($"[{DeviceName}] Battery protocol fallback: {alternate.FeatureName}");
+                    }else{
+                        // Rotate even when no reading was available, so a
+                        // third advertised feature can be tried next poll.
+                        _batteryFeature=alternate;_batteryFeatureIndex=FeatureMap[alternate.FeatureId];
+                    }
+                }
+            }
+        }
+        if(ret!=null)_featureReadFailures=0;
 
         if (ret == null)
         {

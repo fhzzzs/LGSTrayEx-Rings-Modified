@@ -37,6 +37,20 @@ internal sealed class DiagnosticsPanel:StackPanel
         }
         Button Action(string label,Action action){var b=new Button{Content=label,Margin=new Thickness(0,4,6,4),Padding=new Thickness(10,5,10,5)};b.Click+=(_,_)=>action();return b;}
         actions.Children.Add(Action("刷新诊断",Refresh));
+        var inspect=Action("扫描硬件兼容性",()=>{});
+        inspect.Click+=async(_,_)=>{
+            inspect.IsEnabled=false;status.Text="正在枚举 HID 接口（只读）";
+            try{RingDiagnostics.HardwareInventory=await Task.Run(AsusBatteryReader.InspectHardware);Refresh();}
+            catch(Exception ex){status.Text="硬件枚举失败："+ex.Message;}
+            finally{inspect.IsEnabled=true;}
+        };
+        actions.Children.Add(inspect);
+        actions.Children.Add(Action("查看协议目录",()=>{
+            var text=string.Join(Environment.NewLine,System.Linq.Enumerable.Select(PeripheralCatalog.Asus,p=>$"{p.Pid:X4} · {p.Name} · {p.Protocol}"));
+            var window=new Window{Title="Battery Monitor · 兼容性目录",Width=650,Height=580,Owner=Window.GetWindow(this),WindowStartupLocation=WindowStartupLocation.CenterOwner,
+                Content=new TextBox{Text="协议适配目录（非全型号实机认证）"+Environment.NewLine+text,IsReadOnly=true,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
+            window.ShowDialog();
+        }));
         actions.Children.Add(Action("复制报告",()=>{_ = CopyAsync();}));
         actions.Children.Add(Action("导出完整 TXT",Export));
         actions.Children.Add(Action("打开日志目录",()=>Process.Start(new ProcessStartInfo(AppDataPaths.LocalAppDataDir){UseShellExecute=true})));

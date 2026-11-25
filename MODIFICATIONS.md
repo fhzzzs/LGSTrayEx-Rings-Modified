@@ -43,3 +43,6 @@ Public product and executable names are Battery Monitor. Original upstream credi
 
 ## v1.0.4 — device identity and performance
 Normalize embedded NUL characters in controller IDs and stored identity keys; verify complete clipboard text. For observed GameSir G7 Pro 3537:10A9, use the raw Windows Gaming Input battery report, with XInput fallback. Reversible single-model history grouping is disabled after simultaneous same-model devices are observed; no serial identity is fabricated. Cache animation-frame snapshots and drawing pens, reduce unnecessary device subscriptions and grouping comparisons, defer initial shell placement until after dispatcher startup. Real hardware readings and long-running performance remain to be measured.
+
+## v2.0.0 — integrated compatibility expansion
+Stages 1.1–1.5 developed without intermediate branch builds: protocol allowlist, expanded ASUS status readers, safer Logitech HID++ 2.0 fallback, controller naming/Windows battery paths, read quality and disagreement diagnostics, bounded session history and adaptive scheduling. Included source references, local hardware discovery and a 168-hour sampler. Real-device coverage and resource targets remain unverified. See DEVICE-COMPATIBILITY.md.

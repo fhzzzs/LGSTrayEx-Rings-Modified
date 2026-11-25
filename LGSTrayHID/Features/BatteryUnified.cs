@@ -32,7 +32,7 @@ public class BatteryUnified : IBatteryFeature
             backoffStrategy: GlobalSettings.BatteryBackoff);
 
         // Check if request timed out or failed after all retries
-        if (response.Length == 0)
+        if (response.Length < 7 || response.IsError())
         {
             return null;
         }
@@ -44,7 +44,7 @@ public class BatteryUnified : IBatteryFeature
         double percentage = response.GetParam(0);
         byte levelFlags = response.GetParam(1);
 
-        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        if (percentage>100||!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
         {
             DiagnosticLogger.Log($"[Feature {FeatureId}] Invalid battery level flags: 0x{levelFlags:X2} (multiple or no flags set). Rejecting corrupt data.");
             return null;
@@ -62,7 +62,7 @@ public class BatteryUnified : IBatteryFeature
     public BatteryUpdateReturn? ParseBatteryEvent(Hidpp20 eventMessage)
     {
         // Validate this is an event for our feature
-        if (eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
+        if (eventMessage.Length < 7 || eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
         {
             return null;
         }
@@ -76,7 +76,7 @@ public class BatteryUnified : IBatteryFeature
         double percentage = eventMessage.GetParam(0);
         byte levelFlags = eventMessage.GetParam(1);
 
-        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        if (percentage>100||!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
         {
             DiagnosticLogger.Log($"[Feature {FeatureId}] Invalid battery level flags in event: 0x{levelFlags:X2} (multiple or no flags set). Rejecting corrupt data.");
             return null;

@@ -36,7 +36,7 @@ public class BatteryVoltage : IBatteryFeature
             backoffStrategy: GlobalSettings.BatteryBackoff);
 
         // Check if request timed out or failed after all retries
-        if (response.Length == 0)
+        if (response.Length < 7 || response.IsError())
         {
             return null;
         }
@@ -45,6 +45,7 @@ public class BatteryVoltage : IBatteryFeature
         // Params 0-1: Battery voltage in millivolts (16-bit big-endian)
         // Param 2: Charging status flags
         int millivolts = response.GetParam16(0);
+        if(millivolts<2000||millivolts>5000)return null;
         double percentage = LiPoVoltageCurve.EstimatePercentageFromVoltage(millivolts);
         var status = BatteryStatusParser.ParseVoltageBatteryStatus(response.GetParam(2));
 
@@ -55,7 +56,7 @@ public class BatteryVoltage : IBatteryFeature
     public BatteryUpdateReturn? ParseBatteryEvent(Hidpp20 eventMessage)
     {
         // Validate this is an event for our feature
-        if (eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
+        if (eventMessage.Length < 7 || eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
         {
             return null;
         }
@@ -64,6 +65,7 @@ public class BatteryVoltage : IBatteryFeature
         // Params 0-1: Battery voltage in millivolts (16-bit big-endian)
         // Param 2: Charging status flags
         int millivolts = eventMessage.GetParam16(0);
+        if(millivolts<2000||millivolts>5000)return null;
         double percentage = LiPoVoltageCurve.EstimatePercentageFromVoltage(millivolts);
         var status = BatteryStatusParser.ParseVoltageBatteryStatus(eventMessage.GetParam(2));
 

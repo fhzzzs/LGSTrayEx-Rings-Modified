@@ -31,7 +31,7 @@ public class BatteryUnifiedLevel : IBatteryFeature
             backoffStrategy: GlobalSettings.BatteryBackoff);
 
         // Check if request timed out or failed after all retries
-        if (response.Length == 0)
+        if (response.Length < 7 || response.IsError())
         {
             return null;
         }
@@ -41,6 +41,7 @@ public class BatteryUnifiedLevel : IBatteryFeature
         // Param 1: Next battery percentage (as per HID++ 2.0 spec for feature 0x1000)
         // Param 2: Charging status code
         double percentage = response.GetParam(0);
+        if(percentage>100)return null;
         byte nextPercentage = response.GetParam(1);
 
         var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.GetParam(2));
@@ -56,12 +57,13 @@ public class BatteryUnifiedLevel : IBatteryFeature
     {
         // Validate this is an event for our feature
         // Events have function index 0x00
-        if (eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
+        if (eventMessage.Length < 7 || eventMessage.GetFunctionId() != Protocol.BatteryEventFunction.BATTERY_STATUS_BROADCAST)
         {
             return null;
         }
         
         double percentage = eventMessage.GetParam(0);
+        if(percentage>100)return null;
         byte nextPercentage = eventMessage.GetParam(1);
 
         var status = BatteryStatusParser.ParseUnifiedBatteryStatus(eventMessage.GetParam(2));

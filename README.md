@@ -18,7 +18,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 Battery Monitor is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
-**Status:** v1.0.0 is the first public release, based on the Rings 15 development milestone. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
+**Status:** 2.0.0 development build; v1.0.0 is the first historical public release. Expanded protocols are pending physical validation. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
 ## Features
 
@@ -62,20 +62,26 @@ Right-click a battery ring or the app's notification-area icon to open the share
 
 ## Device compatibility
 
-These are implemented reading paths, not a list of devices certified by physical testing in Rings.9.
+Battery Monitor 2.0 introduces a protocol allowlist and broader automatic
+discovery. See [DEVICE-COMPATIBILITY.md](DEVICE-COMPATIBILITY.md) for the
+implemented paths, protocol sources, validation tiers, known limitations and
+the optional 168-hour performance sampler.
 
-| Device family | Data source | Notes |
-| --- | --- | --- |
-| Logitech mice, keyboards and headsets | HID / HID++ and G HUB | Inherited support; depends on model and connection mode |
-| Logitech G735 | G HUB / Bluetooth LE | Depends on the exposed battery service |
-| ASUS ROG Harpe Ace Mini | OMNI receiver HID | Experimental; automatic discovery, no dedicated settings switch |
-| Bluetooth LE peripherals | Standard Battery Service | Requires readable battery information |
-| Compatible controllers | Windows Gaming Input / GIP | Reported battery capacity where available |
-| XInput controllers | XInput fallback | May report coarse levels instead of exact percentages |
+| Family | Implemented path |
+| --- | --- |
+| Logitech mice, keyboards, headsets | Existing HID++/Centurion/G HUB; advertised HID++ 2.0 feature fallback |
+| ASUS ROG/TUF mice | Catalogued direct receiver/cable or OMNI status reports |
+| ASUS ROG keyboards | Catalogued OMNI pairing and battery reports |
+| ASUS ROG Strix Go 2.4 | Feature-report voltage estimate |
+| ASUS Harpe II Ace/Extreme | Identifiable cable/SPEEDNOVA status report only |
+| Xbox, GameSir, selected Sony/Nintendo/8BitDo | Windows raw/gamepad, XInput, BLE where available |
+| Other BLE peripherals | Standard Battery Service and known appearance/name |
 
-GameSir G7 Pro (observed VID:PID 3537:10A9) is named explicitly; its raw Windows Gaming Input battery report is preferred, with XInput as fallback. Exact live readings and reconnection behavior still need validation on the connected unit. Other specific controllers also require hardware validation. Battery accuracy, charging status and connection-mode support depend on the hardware and drivers.
-
-Automatic device merging is enabled by default. Confirmed hardware identifiers take priority. A unique Logitech HID / G HUB pair with the same canonical model may also be grouped reversibly when there are no conflicting IDs or manual separation rules. Multiple records from either provider prevent inferred matching. Inferred links are not saved as confirmed hardware identity. Remembered offline records preserve grouping during rescan. Manual merge and separate remain available.
+A protocol entry is not a physical-device certification. Unknown models are
+discoverable for diagnostics; no speculative vendor command is sent. Older
+HID++ 1.0-only devices, proprietary ASTRO and unsupported ASUS headset/keyboard
+variants remain incomplete. Multiple devices with a shared receiver or model
+are not assumed identical. Approximate readings are identified as such.
 
 ## Taskbar layout
 

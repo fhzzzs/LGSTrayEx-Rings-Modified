@@ -31,23 +31,12 @@ public static class BatteryFeatureFactory
     /// 3. Unified Battery (0x1004) - Extended feature with capability info
     /// 4. ADC Measurement (0x1F20) - Direct-connect headsets (G733/G535/G935/PRO X)
     /// </remarks>
-    public static IBatteryFeature? GetBatteryFeature(Dictionary<ushort, byte> featureMap)
+    public static IReadOnlyList<IBatteryFeature> GetCandidates(Dictionary<ushort,byte> featureMap)
     {
-        // Check features in priority order
-        foreach (var featureId in new[]
-        {
-            HidppFeature.BATTERY_UNIFIED_LEVEL,  // 0x1000 - preferred
-            HidppFeature.BATTERY_VOLTAGE,        // 0x1001 - fallback
-            HidppFeature.BATTERY_UNIFIED,        // 0x1004 - alternative
-            HidppFeature.ADC_MEASUREMENT         // 0x1F20 - headset fallback
-        })
-        {
-            if (featureMap.ContainsKey(featureId))
-            {
-                return _features[featureId];
-            }
-        }
-
-        return null; // No battery feature available
+        // Prefer direct percentage to voltage estimates, then ADC fallback.
+        ushort[] order=[HidppFeature.BATTERY_UNIFIED_LEVEL,HidppFeature.BATTERY_UNIFIED,HidppFeature.BATTERY_VOLTAGE,HidppFeature.ADC_MEASUREMENT];
+        return order.Where(featureMap.ContainsKey).Select(id=>_features[id]).ToArray();
     }
+    public static IBatteryFeature? GetBatteryFeature(Dictionary<ushort, byte> featureMap)
+        =>GetCandidates(featureMap).FirstOrDefault();
 }

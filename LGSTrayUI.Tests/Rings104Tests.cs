@@ -18,7 +18,8 @@ public class Rings104Tests{
         Assert.Contains("gip:split",c.SeparateDeviceSources);
         var row=ControllerIdentity.Normalize(G7("gip:old\0"));
         Assert.Equal("gip:old",row.Key);Assert.Equal("GameSir G7 Pro",row.Name);
-        Assert.DoesNotContain("\0",ControllerIdentity.Clean("abc\0def"));
+        Assert.Equal("abcdef",ControllerIdentity.Clean("abc\0def"));
+        Assert.DoesNotContain('\0',ControllerIdentity.Clean("abc\0def"));
     }
     [Fact]public void ConfirmedModelUsesOneReversibleHistoryAcrossReconnect(){
         var c=new RingPreferences();var center=new PhysicalDeviceCenter(T);

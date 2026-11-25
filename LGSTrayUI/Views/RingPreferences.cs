@@ -54,7 +54,7 @@ internal sealed class RingPreferences
     public Dictionary<string,Dictionary<int,AlertAudio>> AlertSounds {get;set;}=new();
     internal string DeviceInk(string key,string field,string fallback)=>DevicePalette.TryGetValue(key,out var map)&&map.TryGetValue(field,out var value)?value:fallback;
     private static DateTimeOffset lightChecked; private static bool lightCached;
-    internal static bool SystemLight(){var now=DateTimeOffset.UtcNow;if((now-lightChecked).TotalSeconds<1)return lightCached;lightChecked=now;try{return lightCached=Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","SystemUsesLightTheme",0) is int n&&n!=0;}catch{return lightCached;}}
+    internal static bool SystemLight(){var now=DateTimeOffset.UtcNow;if((now-lightChecked).TotalSeconds<3)return lightCached;lightChecked=now;try{return lightCached=Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","SystemUsesLightTheme",0) is int n&&n!=0;}catch{return lightCached;}}
     internal string Foreground(string key,string field,bool light)=>DeviceInk(key,field,AutoContrast&&light?(field=="Track"?"#000000":"#20242C"):field=="Icon"?Icon:field=="Text"?Text:Track);
     internal AlertAudio Audio(string key,int threshold)=>AlertSounds.TryGetValue(key,out var own)&&own.TryGetValue(threshold,out var a)?a:AlertSounds.TryGetValue("",out var global)&&global.TryGetValue(threshold,out var b)?b:new AlertAudio{Sound=threshold<=5?"Alert":threshold<=10?"Bell":"Soft Ding"};
     public double PollSeconds {get;set;}=2; public double BleSeconds {get;set;}=15; public bool UseGip {get;set;}=true; public bool UseXInput {get;set;}=true; public bool UseBle {get;set;}=true;

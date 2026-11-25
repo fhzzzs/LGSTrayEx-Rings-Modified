@@ -19,16 +19,16 @@ internal sealed class BatterySourceSelector
             string root=group.Reading.Key;
             retained.Add(root);
             var sources=group.Sources;
-            var valid=sources.Where(Usable).ToArray();
-            var candidates=valid.Where(d=>SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Exact).ToArray();
+            var fresh=sources.Where(d=>d.IsConnected).Select(d=>SourceReading.Normalize(d,now,preferences)).Where(d=>d.Quality is ReadingQuality.Exact or ReadingQuality.Band).ToArray();
+            var candidates=fresh.Where(d=>d.Quality==ReadingQuality.Exact).Select(d=>d.Row).ToArray();
             TaskbarBattery? chosen=null;
             if(preferences.PreferredSources.TryGetValue(root,out var preferred))
-                chosen=candidates.FirstOrDefault(d=>d.Key==preferred);
+                chosen=fresh.FirstOrDefault(d=>d.Row.Key==preferred)?.Row;
             if(chosen==null&&group.Inferred&&sources.Any(ControllerAliasMatcher.IsGip))chosen=candidates.FirstOrDefault(ControllerAliasMatcher.IsXboxBle);
             if(chosen==null&&selected.TryGetValue(root,out var previous))
                 chosen=candidates.FirstOrDefault(d=>d.Key==previous);
-            chosen??=candidates.Length>0?DeviceIdentityManager.Best(candidates,null):
-                DeviceIdentityManager.Best(sources.Where(d=>d.IsConnected&&SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Band).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
+            chosen??=candidates.Length>0?DeviceIdentityManager.Best(fresh.Where(d=>d.Quality==ReadingQuality.Exact).GroupBy(d=>d.Confidence).OrderByDescending(g=>g.Key).First().Select(d=>d.Row),null):
+                DeviceIdentityManager.Best(fresh.Select(d=>d.Row).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
             if(SourceReading.Normalize(chosen,now,preferences).Quality==ReadingQuality.Stale)
                 chosen=chosen with{LastKnownLevel=chosen.Level??chosen.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false};
             if(chosen.Level is int level&&(level<0||level>100))chosen=chosen with{Level=null};

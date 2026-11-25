@@ -23,7 +23,7 @@ public static class DeviceMetadataRetriever
                                                   Hidpp20Commands.GetDeviceNameLength(device.DeviceIdx, featureIndex), 
                                                   backoffStrategy: GlobalSettings.MetadataBackoff);
 
-        if (ret.Length == 0)
+        if (ret.Length < 5 || ret.IsError())
         {
             throw new InvalidOperationException("Failed to retrieve device name length (timeout)");
         }
@@ -39,7 +39,7 @@ public static class DeviceMetadataRetriever
                                                   Hidpp20Commands.GetDeviceNameChunk(device.DeviceIdx, featureIndex, (byte)name.Length), 
                                                   backoffStrategy: GlobalSettings.MetadataBackoff);
 
-            if (ret.Length == 0)
+            if (ret.Length < 5 || ret.IsError())
             {
                 throw new InvalidOperationException($"Failed to retrieve device name chunk at offset {name.Length} (timeout)");
             }
@@ -47,7 +47,7 @@ public static class DeviceMetadataRetriever
             name += Encoding.UTF8.GetString(ret.GetParams());
         }
 
-        return name.TrimEnd('\0');
+        return name.Length>nameLength?name[..nameLength].TrimEnd('\0'):name.TrimEnd('\0');
     }
 
     /// <summary>
@@ -62,7 +62,7 @@ public static class DeviceMetadataRetriever
                                                   Hidpp20Commands.GetDeviceType(device.DeviceIdx, featureIndex),
                                                   backoffStrategy: GlobalSettings.MetadataBackoff);
 
-        if (ret.Length == 0)
+        if (ret.Length < 5 || ret.IsError())
         {
             throw new InvalidOperationException("Failed to retrieve device type (timeout)");
         }

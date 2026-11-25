@@ -15,6 +15,14 @@ internal sealed record SourceReading(TaskbarBattery Row,ConnectionState Connecti
         var quality=row.Quality;
         if(quality is ReadingQuality.Exact or ReadingQuality.Band)
             if(row.Updated>now.AddSeconds(5)||until<now)quality=ReadingQuality.Stale;
-        return new(row,row.Connection,row.ChargeState,quality,until,quality==ReadingQuality.Exact?100:quality==ReadingQuality.Band?30:0);
+        return new(row,row.Connection,row.ChargeState,quality,until,ConfidenceFor(row,quality));
+    }
+    internal static int ConfidenceFor(TaskbarBattery row,ReadingQuality quality){
+        if(quality==ReadingQuality.Band)return row.Estimated?40:25;
+        if(quality!=ReadingQuality.Exact)return 0;
+        if(row.Key.StartsWith("asus:",StringComparison.Ordinal)||row.Key.StartsWith("ble:",StringComparison.Ordinal))return 100;
+        if(row.Key.StartsWith("logi:",StringComparison.Ordinal))return row.Key.Contains(":Native:",StringComparison.Ordinal)?95:90;
+        if(row.Key.StartsWith("gip:",StringComparison.Ordinal))return 70;
+        return 80;
     }
 }

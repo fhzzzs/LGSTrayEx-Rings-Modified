@@ -25,7 +25,7 @@ internal static class RingsUpdateService
     internal static readonly string Versions=Path.Combine(AppDataPaths.LocalAppDataDir,"versions");
     private static readonly string Previous=Path.Combine(AppDataPaths.LocalAppDataDir,"rings-previous-version.json");
     private static readonly HttpClient Http=new(){Timeout=Timeout.InfiniteTimeSpan};
-    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("Battery-Monitor-Update/1.0.4");}
+    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("Battery-Monitor-Update/2.0.0");}
     internal static Version Current{
         get{
             var s=Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion??"";
@@ -35,7 +35,7 @@ internal static class RingsUpdateService
     internal static Version ParseBuildVersion(string value){
         int pos=value.IndexOf("-rings.",StringComparison.Ordinal);
         var version=(pos>=0?value[(pos+7)..]:value).Split('+')[0];
-        return Version.TryParse(version,out var parsed)?parsed:new Version(1,0,4);
+        return Version.TryParse(version,out var parsed)?parsed:new Version(2,0,0);
     }
     internal static bool TryTag(string? tag,out Version version){
         version=new Version(0,0,0);
