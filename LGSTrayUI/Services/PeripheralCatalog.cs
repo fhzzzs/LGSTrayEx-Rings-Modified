@@ -7,7 +7,7 @@ namespace LGSTrayUI;
 
 // Protocol facts referenced in docs/DEVICE-COMPATIBILITY.md. A catalog entry
 // allows only a specific, read-only status command on the specified transport.
-internal enum AsusProtocol { DirectMouse, OmniMouse, OmniKeyboard, SpeednovaMouse, StrixGoHeadset }
+internal enum AsusProtocol { DirectMouse, OmniMouse, OmniKeyboard, SpeednovaMouse, StrixGoHeadset, DirectKeyboard, DirectHeadset }
 internal sealed record AsusProfile(ushort Pid,string Name,DeviceType Type,AsusProtocol Protocol,int BatteryByte=5,int Scale=1);
 internal static class PeripheralCatalog
 {
@@ -54,11 +54,26 @@ internal static class PeripheralCatalog
         rows.Add(new(0x1AD0,"ROG Harpe II Ace / Extreme",DeviceType.Mouse,AsusProtocol.SpeednovaMouse));
         rows.Add(new(0x18D6,"ROG Strix Go 2.4",DeviceType.Headset,AsusProtocol.StrixGoHeadset));
         rows.Add(new(0x18D7,"ROG Strix Go 2.4",DeviceType.Headset,AsusProtocol.StrixGoHeadset));
+        void DK(string name,int offset,params ushort[] ids){foreach(var id in ids)rows.Add(new(id,name,DeviceType.Keyboard,AsusProtocol.DirectKeyboard,offset));}
+        DK("ROG Azoth",6,0x1A83,0x1A85);
+        DK("ROG Azoth Extreme",6,0x1B3F);
+        DK("ROG Azoth Extreme SE",6,0x1CEF);
+        DK("ROG Azoth X",6,0x1C24,0x1C25);
+        DK("ROG Falchion",11,0x193C,0x193E);
+        DK("ROG Falchion RX Low Profile",11,0x1B04);
+        DK("ROG Claymore II",6,0x196B);
+        DK("ROG Strix Scope II 96 Wireless",6,0x1AAE);
+        DK("ROG Strix Scope II 96 RX Wireless",6,0x1B78);
+        rows.Add(new(0x1AFA,"ROG Delta II",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
+        rows.Add(new(0x1D41,"ROG Delta II KJP",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
+        rows.Add(new(0x1B84,"ROG Pelta",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
+        // Cetra's L/R/case fields require a separate component-aware parser.
         return rows.ToArray();
     }
     internal static IReadOnlyList<AsusProfile> Asus=>asus;
     internal static AsusProfile? Find(ushort pid,AsusProtocol protocol)=>asus.FirstOrDefault(x=>x.Pid==pid&&x.Protocol==protocol);
     internal static DeviceType? NamedType(string name){
+        if(PeripheralDisplayCatalog.Classify(name) is { } named)return named;
         string n=name.ToUpperInvariant();
         if(n.Contains("DUALSENSE")||n.Contains("DUALSHOCK")||n.Contains("JOY-CON")||n.Contains("SWITCH PRO CONTROLLER")||n.Contains("8BITDO PRO")||n.Contains("8BITDO ULTIMATE")||n.Contains("8BITDO N30")||n.Contains("8BITDO SN30")||n.Contains("GAMESIR")||n.Contains("CONTROLLER")||n.Contains("GAMEPAD"))return DeviceType.Gamepad;
         if(n.Contains("MX KEYS")||n.Contains("MX MECHANICAL")||n.Contains("AZOTH")||n.Contains("FALCHION")||n.Contains("STRIX SCOPE")||n.Contains("STRIX MORPH")||n.Contains("KEYBOARD"))return DeviceType.Keyboard;

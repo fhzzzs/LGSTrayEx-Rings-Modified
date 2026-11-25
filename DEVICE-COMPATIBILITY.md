@@ -12,12 +12,12 @@ pairing, firmware, drivers or Armoury Crate settings.
 - **Protocol implemented, physical validation pending:** known ASUS direct
   mice, OMNI mice/keyboards, confirmed Harpe II SPEEDNOVA model strings,
   Strix Go 2.4 feature reports; supported Logitech HID++ 2.0 battery features;
-  existing Centurion and G HUB paths; standard BLE Battery Service and
+  existing Centurion and G HUB paths; ASTRO A50 Gen 5 base station; direct ASUS Azoth/Falchion/Claymore II/Scope II 96 keyboards and Delta II/Pelta headsets; standard BLE Battery Service and
   Windows Gaming Input on compatible controllers.
 - **Discovery only or pending:** any unknown VID/PID/firmware or shared receiver
   with no reliable model identity; older HID++ 1.0-only devices not handled by
-  the inherited transport; ASTRO-specific wireless protocols; ROG Delta,
-  Cetra, Pelta, unsupported direct keyboards/receivers and unverified shared
+  the inherited transport; other ASTRO-specific wireless protocols; ROG Cetra,
+  unsupported direct keyboards/receivers and unverified shared
   SPEEDNOVA variants; model-specific Sony, Nintendo, 8BitDo and GameSir
   proprietary battery reports when standard Windows reports are unavailable.
 
@@ -32,9 +32,7 @@ a fabricated zero percent. No blind writes to unknown HID devices.
 
 Logitech HID++ 2.0 uses the advertised feature table; direct percentage
 features precede voltage/ADC estimation. Failed reads can rotate to another
-advertised feature. G HUB remains available as an alternate path. Inherited
-Centurion remains unchanged. HID++ 1.0-only device initialization and ASTRO
-protocol support need additional independent implementation/testing.
+advertised feature. G HUB remains available as an alternate path. Centurion now rejects invalid SOC >100. HID++ 1.0 register replies are matched by slot; full legacy device initialization and additional ASTRO protocols still need implementation. A50 Gen 5's 046D:0B1C protocol is implemented but not tested on this fork's hardware.
 
 Controllers use known VID/PID naming plus Windows raw battery reports or BLE
 where available, and XInput bands as fallback. The PID is not a serial number.
@@ -49,7 +47,7 @@ supported-brand HID collections without opening them or writing commands;
 then export the complete TXT. The hardware inventory omits paths, serials,
 and addresses, but the full diagnostic contains local logical source IDs:
 review before sharing. Compatibility catalog lists implemented ASUS profiles.
-Battery changes remain in memory only, at most 256 records per session.
+Battery changes remain in memory only, at most 256 records per session. Explicit offline-history cleanup retains personalization. A bounded display-only JSON catalog can be imported in Diagnostics independently of the executable. It does not authorize new HID commands or device identity merges.
 Stable ASUS/BLE reads may slow polling; reconnect events and manual rescan
 remain available. A blocked native provider does not start overlapping
 requests, and other providers can keep running.
@@ -85,3 +83,9 @@ Protocol facts (IDs, report IDs, command echoes, offsets and voltage steps):
 
 The C# adaptations implement the documented protocol facts in the existing
 Battery Monitor architecture. No external vendor app or executable is bundled.
+
+## Additional protocol references (completion branch)
+- https://github.com/Sapd/HeadsetControl/blob/master/lib/devices/logitech_astro_a50.hpp — A50 Gen 5
+- https://github.com/HeyOkay/HaloBattery/blob/main/providers/astro.py — A50 base-station protocol facts
+- https://github.com/seerge/g-helper/tree/main/app/Peripherals/Keyboard/Models — direct keyboard IDs and battery offsets
+- https://github.com/seerge/g-helper/tree/main/app/Peripherals/Headset/Models — Delta II/Pelta

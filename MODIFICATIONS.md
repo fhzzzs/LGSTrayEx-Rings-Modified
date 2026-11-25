@@ -46,3 +46,6 @@ Normalize embedded NUL characters in controller IDs and stored identity keys; ve
 
 ## v2.0.0 — integrated compatibility expansion
 Stages 1.1–1.5 developed without intermediate branch builds: protocol allowlist, expanded ASUS status readers, safer Logitech HID++ 2.0 fallback, controller naming/Windows battery paths, read quality and disagreement diagnostics, bounded session history and adaptive scheduling. Included source references, local hardware discovery and a 168-hour sampler. Real-device coverage and resource targets remain unverified. See DEVICE-COMPATIBILITY.md.
+
+## 2.0.0 completion checkpoint (unbuilt)
+Additional ASTRO A50 Gen 5 and ASUS direct keyboard/headset adapters; scoped HID fallback identity, managed hotplug queue, exact register matching, Centurion SOC validation, battery freshness, shell probe backoff, offline cleanup, local display catalog. See COMPLETION-CHECKLIST.md for open items. Version remains 2.0.0.

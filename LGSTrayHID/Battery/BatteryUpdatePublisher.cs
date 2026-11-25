@@ -11,6 +11,9 @@ namespace LGSTrayHID.Battery;
 public class BatteryUpdatePublisher
 {
     private BatteryUpdateReturn _lastState;
+    private DateTimeOffset _lastPublished=DateTimeOffset.MinValue;
+    public static bool ShouldPublish(bool force,bool unchanged,DateTimeOffset previous,DateTimeOffset now)
+        =>force||!unchanged||previous==DateTimeOffset.MinValue||now<previous||now-previous>=TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Publishes a battery update if the state has changed or if forced.
@@ -37,7 +40,7 @@ public class BatteryUpdatePublisher
         // Check for state change (deduplication)
         // BUG FIX: Original code had `if (forceUpdate || (newState == _lastState))` which was backwards
         // Correct logic: only skip update if NOT forced AND state unchanged
-        if (!forceUpdate && newState == _lastState)
+        if (!ShouldPublish(forceUpdate,newState == _lastState,_lastPublished,updateTime))
         {
             // State unchanged, don't send IPC update
             return false;
@@ -45,6 +48,7 @@ public class BatteryUpdatePublisher
 
         // State changed or forced - send IPC update
         _lastState = newState;
+        _lastPublished=updateTime;
         HidppManagerContext.Instance.SignalDeviceEvent(
             IPCMessageType.UPDATE,
             new UpdateMessage(deviceId, newState.batteryPercentage, newState.status, newState.batteryMVolt, updateTime)

@@ -119,6 +119,7 @@ public class HidppDevice
                                            Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET),
                                            backoffStrategy: GlobalSettings.FeatureEnumBackoff,
                                            cancellationToken: _cancellationSource.Token);
+            if(ret.Length<5||ret.IsError()||ret.GetParam(0)==0){DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature set unavailable");return;}
             FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
 
             // Get Feature Count
@@ -126,6 +127,7 @@ public class HidppDevice
                                            Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]),
                                            backoffStrategy: GlobalSettings.FeatureEnumBackoff,
                                            cancellationToken: _cancellationSource.Token);
+            if(ret.Length<5||ret.IsError())return;
             int featureCount = ret.GetParam(0);
 
             // Enumerate Features with retry logic
@@ -141,16 +143,16 @@ public class HidppDevice
                 { ProfileName = "WiredFeatureEnum" }
                 : GlobalSettings.FeatureEnumBackoff;
 
-            for (byte i = 0; i <= featureCount; i++)
+            for (int i = 0; i <= featureCount; i++)
             {
                 // Query feature with retry (backoff strategy handles retries)
                 ret = await Parent.WriteRead20(Parent.RequestChannel,
-                                               Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i),
+                                               Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], (byte)i),
                                                backoffStrategy: enumBackoff,
                                                cancellationToken: _cancellationSource.Token);
 
                 // Check if we got a valid response after all retries
-                if (ret.Length == 0)
+                if (ret.Length < 6 || ret.IsError())
                 {
                     string wiredMsg = _isWiredModeDevice ? " (wired mode - continuing with partial features)" : "";
                     DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i} " +
@@ -161,7 +163,7 @@ public class HidppDevice
 
                 ushort featureId = ret.GetFeatureId();
 
-                FeatureMap[featureId] = i;
+                FeatureMap[featureId] = (byte)i;
 
                 // Log feature mapping
                 DiagnosticLogger.Verbose($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");
@@ -241,7 +243,7 @@ public class HidppDevice
         else
         {
             // Device does not have firmware info - use device name hash as identifier
-            Identifier = DeviceIdentifierGenerator.GenerateIdentifier(default, DeviceName);
+            Identifier = DeviceIdentifierGenerator.GenerateScopedFallback(DeviceName,Parent.ContainerIdentity,DeviceIdx);
         }
 
         // Select battery feature using factory pattern
@@ -357,7 +359,7 @@ public class HidppDevice
                 try
                 {                    
                     updateSucceeded = await UpdateBattery();
-                    _consecutivePollFailures = 0; // Reset on success
+                    if(updateSucceeded)_consecutivePollFailures = 0; // Reset only on success
                 }
                 catch (Exception ex)
                 {
@@ -369,7 +371,7 @@ public class HidppDevice
                 // Use progressive backoff based on consecutive failures
                 if (!updateSucceeded)
                 {
-                    _consecutivePollFailures++;
+                    _consecutivePollFailures=Math.Min(16,_consecutivePollFailures+1);
                     var retryDelay = GlobalSettings.BatteryBackoff.GetDelay(_consecutivePollFailures);
                     DiagnosticLogger.Log($"[{DeviceName}] Adding {retryDelay.TotalSeconds}s retry delay after failure " +
                                          $"(consecutive failures: {_consecutivePollFailures})");

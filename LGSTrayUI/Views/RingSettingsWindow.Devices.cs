@@ -41,6 +41,12 @@ internal sealed partial class RingSettingsWindow
         string Describe(DeviceGroup g)=>c.Names.GetValueOrDefault(g.Reading.Key,g.Reading.Name)+" · "+string.Join(" / ",g.Sources.Select(d=>DeviceIdentityManager.Source(d.Key)).Distinct())+(g.Reading.Offline?" · 离线":"");
         if(candidates.Length>=2){var primary=new ComboBox{ItemsSource=candidates.Select(Describe).ToArray(),SelectedIndex=0};var secondary=new ComboBox();DeviceGroup[] eligible=[];void Update(){if(primary.SelectedIndex<0)return;var a=candidates[primary.SelectedIndex];eligible=candidates.Where(g=>g.Reading.Key!=a.Reading.Key&&g.Reading.Type==a.Reading.Type).ToArray();secondary.ItemsSource=eligible.Select(Describe).ToArray();secondary.SelectedIndex=eligible.Length>0?0:-1;};primary.SelectionChanged+=(_,_)=>Update();panel.Children.Add(Label("保留的主设备"));panel.Children.Add(primary);panel.Children.Add(Label("合并的重复记录"));panel.Children.Add(secondary);Update();panel.Children.Add(Btn("合并选中的设备",()=>{if(primary.SelectedIndex<0||secondary.SelectedIndex<0)return;var a=candidates[primary.SelectedIndex];var b=eligible[secondary.SelectedIndex];if(MessageBox.Show(this,"确认这两个记录属于同一台物理设备？","合并设备",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;DeviceIdentityManager.Merge(c,a,b);RingConfig.Notify();Build();}));}
         else panel.Children.Add(Label("至少需要两个设备记录才能手动合并。"));
+        panel.Children.Add(Btn("清理已断开的历史设备记录",()=>{
+            var offline=groups.Where(g=>g.Reading.Offline&&g.Sources.All(s=>s.Offline)).Select(g=>g.Reading.Key).ToArray();
+            if(offline.Length==0)return;
+            if(MessageBox.Show(this,"仅清理已消失的离线历史。仍被系统枚举的设备不会移除，个性化设置保留。","清理离线历史",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+            foreach(var key in offline)forget(key);
+        }));
         if(c.SeparateDeviceSources.Count>0)panel.Children.Add(Btn("恢复自动匹配（清除拆分例外）",()=>{c.SeparateDeviceSources.Clear();RingConfig.Notify();Build();}));
         foreach(var group in groups.Where(g=>g.Ignored)){var g=group;panel.Children.Add(Btn("恢复忽略的设备 · "+Describe(g),()=>{c.IgnoredDevices.Remove(g.Reading.Key);RingConfig.Notify();Build();}));}
         foreach(var key in c.IgnoredDevices.Where(k=>!groups.Any(g=>g.Reading.Key==k)).ToArray()){var k=key;panel.Children.Add(Btn("清除历史忽略规则 · "+k,()=>{c.IgnoredDevices.Remove(k);RingConfig.Notify();Build();}));}

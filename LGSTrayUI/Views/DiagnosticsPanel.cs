@@ -45,6 +45,12 @@ internal sealed class DiagnosticsPanel:StackPanel
             finally{inspect.IsEnabled=true;}
         };
         actions.Children.Add(inspect);
+        actions.Children.Add(Action("导入设备名称目录",()=>{
+            var dialog=new OpenFileDialog{Filter="JSON catalog (*.json)|*.json"};
+            if(dialog.ShowDialog()!=true)return;
+            try{int count=PeripheralDisplayCatalog.Import(dialog.FileName);status.Text=$"已导入 {count} 个名称分类，下次扫描生效。不会新增未知 HID 指令。";}
+            catch(Exception ex){status.Text="目录导入失败："+ex.Message;}
+        }));
         actions.Children.Add(Action("查看协议目录",()=>{
             var text=string.Join(Environment.NewLine,System.Linq.Enumerable.Select(PeripheralCatalog.Asus,p=>$"{p.Pid:X4} · {p.Name} · {p.Protocol}"));
             var window=new Window{Title="Battery Monitor · 兼容性目录",Width=650,Height=580,Owner=Window.GetWindow(this),WindowStartupLocation=WindowStartupLocation.CenterOwner,

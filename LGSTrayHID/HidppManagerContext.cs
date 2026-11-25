@@ -20,7 +20,8 @@ public sealed class HidppManagerContext
     private readonly ConcurrentDictionary<string, Guid> _containerMap = new();
     private readonly ConcurrentDictionary<Guid, HidppReceiver> _deviceMap = new();
     private readonly ConcurrentDictionary<string, CenturionDevice> _centurionMap = new();
-    private readonly BlockingCollection<HidDeviceInfo> _deviceQueue = [];
+    private sealed record Arrival(string Path,ushort ProductId,ushort UsagePage,ushort Usage,string? ProductName);
+    private readonly System.Threading.Channels.Channel<Arrival> _deviceQueue=System.Threading.Channels.Channel.CreateUnbounded<Arrival>(new(){SingleReader=true,SingleWriter=false});
 
     // hidapi keeps the raw function pointers for the lifetime of the process, but the GC
     // does not track references held by unmanaged code. These fields are the only thing
@@ -50,29 +51,14 @@ public sealed class HidppManagerContext
 
     public void Start(CancellationToken cancellationToken)
     {
-        new Thread(async () =>
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var dev = _deviceQueue.Take(); // blocking call
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
+        _ = Task.Run(async ()=>{
+            try{
+                await foreach(var dev in _deviceQueue.Reader.ReadAllAsync(cancellationToken)){
+                    try{await InitDevice(dev);}
+                    catch(Exception ex){DiagnosticLogger.LogError($"Unhandled exception initialising device: {ex}",nameof(InitDevice));}
                 }
-
-                // This lambda is async void: an escaping exception is rethrown on the
-                // thread pool and kills the daemon. One device failing to initialise must
-                // not take down hotplug handling for every other device.
-                try
-                {
-                    await InitDevice(dev);
-                }
-                catch (Exception ex)
-                {
-                    DiagnosticLogger.LogError($"Unhandled exception initialising device: {ex}", nameof(InitDevice));
-                }
-            }
-        }).Start();
+            }catch(OperationCanceledException) when(cancellationToken.IsCancellationRequested){}
+        },cancellationToken);
 
         unsafe
         {
@@ -98,19 +84,22 @@ public sealed class HidppManagerContext
         }
     }
 
-    private async Task InitDevice(HidDeviceInfo deviceInfo)
+    private async Task InitDevice(Arrival deviceInfo)
     {
         // All discrimination is handled by HidppCollection
-        HidppCollection collection = HidppCollection.Classify(deviceInfo);
-        string devPath = deviceInfo.GetPath();
+        HidppCollection collection = HidppCollection.Classify(deviceInfo.ProductId,deviceInfo.Path);
+        string devPath = deviceInfo.Path;
 
         switch (collection)
         {
             case HidppCollection.Short or HidppCollection.Long:
                 DiagnosticLogger.Log($"Initializing HID++ device...");
 
-                HidDevicePtr hidppDev = HidOpenPath(ref deviceInfo);
-                _ = HidWinApiGetContainerId(hidppDev, out Guid containerId);
+                HidDevicePtr hidppDev = HidOpenPath(devPath);
+                if(hidppDev==0)return;
+                if(HidWinApiGetContainerId(hidppDev,out Guid containerId)!=0||containerId==Guid.Empty){
+                    HidClose(hidppDev);DiagnosticLogger.LogWarning("HID++ container identity unavailable; skipped ambiguous collection.");return;
+                }
 
                 DiagnosticLogger.Log(devPath);
                 DiagnosticLogger.Log(containerId.ToString());
@@ -131,7 +120,7 @@ public sealed class HidppManagerContext
 
                 if (!_deviceMap.TryGetValue(containerId, out HidppReceiver? hidppReceiver))
                 {
-                    hidppReceiver = new();
+                    hidppReceiver = new(){ContainerIdentity=containerId.ToString("N")};
                     _deviceMap[containerId] = hidppReceiver;
                     _containerMap[devPath] = containerId;
                     DiagnosticLogger.Log($"New container created - Path: {devPath}, Container: {containerId}");
@@ -141,18 +130,20 @@ public sealed class HidppManagerContext
                     DiagnosticLogger.Log($"Existing container found - Path: {devPath}, Container: {containerId}");
                 }
 
+                _containerMap[devPath]=containerId;
                 await hidppReceiver.SetUp(collection, hidppDev, deviceInfo.UsagePage, isWiredModeDevice);
                 return;
 
             case HidppCollection.Centurion centurion:
                 DiagnosticLogger.Log($"[Centurion] Detected 0x{centurion.ReportIdByte:X2} interface 0x{deviceInfo.UsagePage:X4}: {devPath}");
-                HidDevicePtr centDev = HidOpenPath(ref deviceInfo);
+                if(_centurionMap.ContainsKey(devPath))return;
+                HidDevicePtr centDev = HidOpenPath(devPath);
                 if (centDev == 0)
                 {
                     DiagnosticLogger.LogError($"[Centurion] Failed to open HID device: {devPath}");
                     return;
                 }
-                string? productName = deviceInfo.GetProductString();
+                string? productName = deviceInfo.ProductName;
                 var centurionDevice = new CenturionDevice(centDev, deviceInfo.UsagePage, deviceInfo.ProductId, centurion.ReportId, productName);
                 _centurionMap[devPath] = centurionDevice;
                 _ = Task.Run(() => centurionDevice.InitAsync());
@@ -215,10 +206,10 @@ public sealed class HidppManagerContext
             string devPath = (*device).GetPath();
             DiagnosticLogger.Log($"HID device arrival detected: {devPath}");
 
-            if (!_deviceQueue.IsAddingCompleted)
-            {
-                _deviceQueue.Add(*device);
-            }
+            // The callback owns native pointers only until it returns. Copy
+            // every field used by the asynchronous consumer now.
+            var info=*device;
+            _deviceQueue.Writer.TryWrite(new Arrival(devPath,info.ProductId,info.UsagePage,info.Usage,info.GetProductString()));
         }
 
         return 0;
@@ -320,7 +311,7 @@ public sealed class HidppManagerContext
         {
             removedReceiver.Dispose();
         }
-        _containerMap.TryRemove(devPath, out _);
+        foreach(var path in _containerMap.Where(p=>p.Value==containerId).Select(p=>p.Key).ToArray())_containerMap.TryRemove(path,out _);
 
         // Confirm cleanup completed
         DiagnosticLogger.Log($"Device removal complete - Path: {devPath}, Container: {containerId}");

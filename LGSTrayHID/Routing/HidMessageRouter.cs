@@ -34,6 +34,7 @@ public class HidMessageRouter
     /// <param name="buffer">Raw HID++ message buffer</param>
     public async Task RouteMessageAsync(byte[] buffer)
     {
+        if(buffer.Length<7)return;
         Hidpp20 message = buffer;
 
         // Route 1: Device announcements (ON/OFF events)

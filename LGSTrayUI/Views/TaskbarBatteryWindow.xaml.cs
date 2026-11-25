@@ -115,7 +115,7 @@ public partial class TaskbarBatteryWindow : Window
         if(areas.HasFlag(PreferenceArea.Providers))_scanner.Poll(DateTimeOffset.UtcNow);
         if(areas.HasFlag(PreferenceArea.Layout)){ApplySnapshot(ReadSnapshot(),true);_animator.RefreshLayout();}
     }
-    private void StateTick(object? sender,EventArgs e){if(!_closed){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());}}
+    private void StateTick(object? sender,EventArgs e){if(!_closed){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());_stateTimer.Interval=TimeSpan.FromMilliseconds(_groups.Length==0?1500:500);}}
     private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);

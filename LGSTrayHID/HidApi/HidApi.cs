@@ -37,6 +37,12 @@ internal static partial class HidApi
         return _HidOpenPath(dev.Path);
     }
 
+    internal static unsafe nint HidOpenPath(string path)
+    {
+        nint memory=Marshal.StringToCoTaskMemAnsi(path);
+        try{return _HidOpenPath((byte*)memory);}
+        finally{Marshal.FreeCoTaskMem(memory);}
+    }
     [LibraryImport("hidapi", EntryPoint = "hid_close")]
     internal static unsafe partial void HidClose(nint dev);
 

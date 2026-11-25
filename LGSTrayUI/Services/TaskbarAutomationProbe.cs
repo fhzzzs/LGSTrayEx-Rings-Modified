@@ -17,7 +17,10 @@ internal static class TaskbarAutomationProbe
     private static Task<Snapshot?>? pending;
     private static Snapshot? last;
     private static long generation;
-    internal static void Invalidate()=>Interlocked.Increment(ref generation);
+    private static long retryAfter;
+    private static int failures;
+    internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
+    internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
     internal static bool Fresh(long now,long started,long completed)
         =>completed>=started&&completed<=now&&now-started<=1500;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
@@ -25,11 +28,17 @@ internal static class TaskbarAutomationProbe
         controls=[];
         long now=Environment.TickCount64;long currentGeneration=Volatile.Read(ref generation);
         if(pending?.IsCompleted==true){
-            if(pending.IsCompletedSuccessfully)last=pending.Result;
+            if(pending.IsCompletedSuccessfully&&pending.Result is { } captured&&captured.Controls.Length>0){
+                last=captured;failures=0;retryAfter=0;
+            }else{
+                last=null;failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);
+            }
             pending=null;
         }
         bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
-        if(pending==null&&(!matching||now-last!.Completed>=400))
+        // Keep the existing 1.5s safety freshness limit. Back off on failed
+        // UIA captures rather than continuously rebuilding cross-process trees.
+        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=900))
             pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         if(!matching||last!.Controls.Length==0)return false;
         controls=last.Controls;return true;

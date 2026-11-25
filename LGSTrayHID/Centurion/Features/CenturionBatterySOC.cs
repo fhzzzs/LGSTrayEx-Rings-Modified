@@ -27,7 +27,9 @@ public sealed class CenturionBatterySOC(byte featureIndex, ushort featureId) : I
             return null;
         }
 
-        byte soc = Math.Min((byte)100, parameters[0]);
+        // 0xFF and other values above 100 are invalid, not full.
+        if(parameters[0]>100)return null;
+        byte soc = parameters[0];
         var status = parameters[2] switch
         {
             0 => PowerSupplyStatus.DISCHARGING,

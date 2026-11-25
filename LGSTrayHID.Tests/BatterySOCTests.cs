@@ -49,13 +49,10 @@ public class BatterySOCTests
     }
 
     [Fact]
-    public void Parse_Clamped_Over100()
+    public void Parse_Rejects_Over100()
     {
-        var result = Feature.ParseBatteryParams([150, 150, 0]);
-
-        Assert.NotNull(result);
-        Assert.Equal(100, result.Value.batteryPercentage);
-        Assert.Equal(PowerSupplyStatus.DISCHARGING, result.Value.status);
+        Assert.Null(Feature.ParseBatteryParams([150, 150, 0]));
+        Assert.Null(Feature.ParseBatteryParams([255, 255, 0]));
     }
 
     [Fact]

@@ -8,6 +8,13 @@ namespace LGSTrayHID.Metadata;
 /// </summary>
 public static class DeviceIdentifierGenerator
 {
+    public static string GenerateScopedFallback(string name,string? container,byte slot)
+    {
+        if(string.IsNullOrWhiteSpace(container))return GenerateIdentifier(default,name);
+        // A source identity, not a serial: different units with identical
+        // model names must never be collapsed across receiver/slot.
+        return "HID."+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{container}:{slot}:{name}")),0,12);
+    }
     /// <summary>
     /// Generates a unique device identifier using priority order:
     /// 1. Serial number (if available)

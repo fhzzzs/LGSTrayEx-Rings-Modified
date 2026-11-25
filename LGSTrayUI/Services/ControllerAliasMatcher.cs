@@ -23,6 +23,8 @@ internal static class ControllerAliasMatcher
         var gip=raw.Where(IsGip).ToArray();
         var slots=raw.Where(IsXInput).ToArray();
         var activeGip=gip.Where(d=>d.IsConnected).ToArray();
+        // A re-used XInput slot may not inherit another connected unit's old history.
+        foreach(var slot in slots.Where(d=>d.IsConnected))if(activeGip.Length>1)c.ControllerHistoryHints.Remove(slot.Key);
         var activeSlots=slots.Where(d=>d.IsConnected).ToArray();
         bool CanPair(TaskbarBattery g,TaskbarBattery x)
             => (Xbox360(g)||GenericXbox(g)||ControllerIdentity.IsG7(g))&&!c.SeparateDeviceSources.Contains(g.Key)&&!c.SeparateDeviceSources.Contains(x.Key)

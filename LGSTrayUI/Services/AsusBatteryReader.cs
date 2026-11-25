@@ -53,9 +53,9 @@ internal static class AsusBatteryReader
         if(length>data.Length)return false;
         if(report==0){
             int i=length>0&&data[0]==0?1:0;
-            return length>=i+10&&data[i]==command&&data[i+1]==sub;
+            return length>=i+Math.Max(2,sub==1?9:10)&&data[i]==command&&data[i+1]==sub;
         }
-        return length>=(command==0xA0?7:command==0x12&&sub==1?10:11)&&data[0]==report&&data[1]==command&&(command==0xA0||data[2]==sub);
+        return length>=(command==0xA0?7:report==0xCC?(sub==8?6:7):command==0x12&&sub==1?10:11)&&data[0]==report&&data[1]==command&&(command==0xA0||data[2]==sub);
     }
     private static byte[]? Exchange(string path,byte report,byte command,byte sub,CancellationToken token,int packet=64){
         token.ThrowIfCancellationRequested();
@@ -101,6 +101,26 @@ internal static class AsusBatteryReader
         int level=reply[batteryByte];bool charging=reply[9]!=0;
         return level>100||(level==0&&!charging)?null:(level,charging);
     }
+    internal static (int Level,bool Charging)? DecodeDirectKeyboard(byte[]? reply,int batteryByte){
+        if(reply==null||batteryByte is not (6 or 11))return null;
+        // HIDAPI omits the zero report ID on Windows; normalize the layout.
+        var frame=reply.Length>0&&reply[0]==0?reply:new byte[]{0}.Concat(reply).ToArray();
+        if(frame.Length<=Math.Max(9,batteryByte)||frame[1]!=0x12||frame[2]!=1||frame[9]>1)return null;
+        int level=frame[batteryByte];bool charging=frame[9]==1;
+        return level>100||(level==0&&!charging)?null:(level,charging);
+    }
+    internal static (int Level,bool Charging)? DecodeDirectHeadset(byte[]? battery,byte[]? charge){
+        if(battery==null||battery.Length<7||battery[0]!=0xCC||battery[1]!=0x12||battery[2]!=7||battery[6]>100)return null;
+        // A missing/invalid charging query must not manufacture charge state.
+        if(charge==null||charge.Length<6||charge[0]!=0xCC||charge[1]!=0x12||charge[2]!=8||charge[5]>1)return null;
+        bool charging=charge[5]==1;int level=battery[6];
+        return level==0&&!charging?null:(level,charging);
+    }
+    private static (int Level,bool Charging)? DirectHeadset(string path,CancellationToken token){
+        var battery=Exchange(path,0xCC,0x12,7,token);
+        if(battery==null)return null;
+        return DecodeDirectHeadset(battery,Exchange(path,0xCC,0x12,8,token));
+    }
     internal static (int Level,bool Charging)? DecodeHeadset(byte[]? reply){
         if(reply==null||reply.Length<13||reply[0]!=0xFF||reply[1]!=0x1B)return null;
         int mv=reply[11]|(reply[12]<<8);if(mv<2800||mv>4500||reply[9] is not (3 or 10))return null;
@@ -140,6 +160,43 @@ internal static class AsusBatteryReader
         }finally{if(head!=0)hid_free_enumeration(head);}
         return seen.Count==0?"No matching HID collections":string.Join(Environment.NewLine,seen.OrderBy(x=>x,StringComparer.Ordinal));
     }
+    // ASTRO A50 Gen5, verified protocol reference: HeadsetControl / HaloBattery.
+    // The base-station collection is an exact VID/PID + usage match.
+    internal static byte[] AstroRequest(byte token){
+        byte[] frame=new byte[64];frame[0]=2;frame[1]=0x0C;frame[2]=3;frame[4]=6;frame[5]=token;return frame;
+    }
+    internal static (int Level,bool Charging)? DecodeAstro(byte[] frame,int count,byte token){
+        if(count<9||count>frame.Length||frame[0]!=2||frame[1]!=0x0C||frame[2]<6||frame[2]+3>count||frame[3]!=0||frame[4]!=6||frame[5]!=token||frame[6]>100||frame[8]>1)return null;
+        return(frame[6],frame[8]==1);
+    }
+    private static int astroToken;
+    internal static IReadOnlyList<TaskbarBattery> ReadAstro(CancellationToken token){
+        var rows=new List<TaskbarBattery>();var head=hid_enumerate(0x046D,0x0B1C);
+        var seen=new HashSet<string>(StringComparer.Ordinal);
+        try{
+            for(var p=head;p!=0;){
+                token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
+                if(d.Vid!=0x046D||d.Pid!=0x0B1C||d.UsagePage!=0xFF32||d.Usage!=0x0074)continue;
+                var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
+                var h=hid_open_path(path);if(h==0)continue;
+                try{
+                    Guid id=Guid.Empty;
+                    try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}catch(EntryPointNotFoundException){}
+                    string identity=id==Guid.Empty?path:id.ToString("N");if(!seen.Add(identity))continue;
+                    byte echo=(byte)((uint)Interlocked.Increment(ref astroToken)%255+1);var request=AstroRequest(echo);var reply=new byte[64];
+                    for(int i=0;i<8;i++)if(hid_read_timeout(h,reply,(nuint)reply.Length,0)<=0)break;
+                    if(hid_write(h,request,(nuint)request.Length)<0)continue;
+                    for(int i=0;i<8;i++){
+                        token.ThrowIfCancellationRequested();int n=hid_read_timeout(h,reply,(nuint)reply.Length,300);
+                        if(DecodeAstro(reply,n,echo) is not { } sample)continue;
+                        rows.Add(new TaskbarBattery(DeviceType.Headset,"ASTRO A50 Gen 5",sample.Level,sample.Charging?"充电中":"已连接",sample.Charging,DateTimeOffset.UtcNow,"astro:a50-gen5:"+identity){HardwareVendorId=0x046D,HardwareProductId=0x0B1C});
+                        break;
+                    }
+                }finally{hid_close(h);}
+            }
+        }finally{if(head!=0)hid_free_enumeration(head);}
+        return rows;
+    }
     internal static IReadOnlyList<TaskbarBattery> Read()=>Read(CancellationToken.None);
     internal static IReadOnlyList<TaskbarBattery> Read(CancellationToken token){
         var result=new List<TaskbarBattery>();var channels=new List<Channel>();var notes=new List<string>();
@@ -153,6 +210,8 @@ internal static class AsusBatteryReader
                 var product=d.Product==0?"":Marshal.PtrToStringUni(d.Product)??"";
                 bool candidate=d.Pid==0x1ACE&&IsOmniChannel(d.Interface,d.UsagePage,d.Usage)||
                     PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectMouse)!=null&&d.Interface==0&&d.UsagePage>=0xFF00||
+                    PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectKeyboard)!=null&&d.UsagePage==0xFF00||
+                    PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectHeadset)!=null&&d.UsagePage==0xFF00||
                     d.Pid==0x1C69&&d.Interface==0&&d.UsagePage>=0xFF00||
                     d.Pid==0x1AD0&&path.Contains("mi_02&col03",StringComparison.OrdinalIgnoreCase)&&product.Contains("Harpe",StringComparison.OrdinalIgnoreCase)||
                     PeripheralCatalog.Find(d.Pid,AsusProtocol.StrixGoHeadset)!=null&&HasFeatureChannel(path);
@@ -191,7 +250,7 @@ internal static class AsusBatteryReader
         // two devices merely because their model names or PIDs match.
         foreach(var family in channels.Where(c=>c.Pid!=0x1ACE).GroupBy(c=>(c.Pid,Id:c.Container!=Guid.Empty?c.Container.ToString("N"):c.Path))){
             token.ThrowIfCancellationRequested();
-            var c=family.First();var profile=PeripheralCatalog.Find(c.Pid,AsusProtocol.DirectMouse)??PeripheralCatalog.Find(c.Pid,AsusProtocol.SpeednovaMouse)??PeripheralCatalog.Find(c.Pid,AsusProtocol.StrixGoHeadset);
+            var c=family.First();var profile=PeripheralCatalog.Find(c.Pid,AsusProtocol.DirectMouse)??PeripheralCatalog.Find(c.Pid,AsusProtocol.SpeednovaMouse)??PeripheralCatalog.Find(c.Pid,AsusProtocol.StrixGoHeadset)??PeripheralCatalog.Find(c.Pid,AsusProtocol.DirectKeyboard)??PeripheralCatalog.Find(c.Pid,AsusProtocol.DirectHeadset);
             if(profile==null)continue;
             if(profile.Protocol==AsusProtocol.SpeednovaMouse){
                 string name=c.Product.Contains("Extreme",StringComparison.OrdinalIgnoreCase)?"ROG Harpe II Extreme":"ROG Harpe II Ace";
@@ -203,6 +262,8 @@ internal static class AsusBatteryReader
                 try{
                     reading=profile.Protocol switch{
                         AsusProtocol.StrixGoHeadset=>Headset(channel.Path,token),
+                        AsusProtocol.DirectKeyboard=>DecodeDirectKeyboard(Exchange(channel.Path,0,0x12,1,token,65),profile.BatteryByte),
+                        AsusProtocol.DirectHeadset=>DirectHeadset(channel.Path,token),
                         AsusProtocol.SpeednovaMouse when c.Pid==0x1AD0=>Decode(Exchange(channel.Path,3,0x12,7,token)),
                         AsusProtocol.SpeednovaMouse=>DecodeMouse(Exchange(channel.Path,0,0x12,7,token,64),1),
                         _=>DecodeMouse(Exchange(channel.Path,0,0x12,7,token,65),profile.Scale)

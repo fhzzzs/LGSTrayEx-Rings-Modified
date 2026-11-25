@@ -55,10 +55,10 @@ public abstract record HidppCollection
     /// </summary>
     internal static HidppCollection Classify(HidDeviceInfo deviceInfo)
     {
-        if (IsExcludedFromProbe(deviceInfo.ProductId)) return new Unsupported();
-        
-        return HidppReportProbe.ProbeFromDescriptor(deviceInfo.GetPath());        
+        return Classify(deviceInfo.ProductId,deviceInfo.GetPath());
     }
+    internal static HidppCollection Classify(ushort productId,string path)
+        =>IsExcludedFromProbe(productId)?new Unsupported():HidppReportProbe.ProbeFromDescriptor(path);
 
     /// <summary>HID++ short channel: report 0x10, 7-byte frames.</summary>
     public sealed record Short : HidppCollection;

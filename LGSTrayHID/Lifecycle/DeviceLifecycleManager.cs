@@ -29,7 +29,7 @@ public class DeviceLifecycleManager
     /// <summary>
     /// Read-only view of the device collection.
     /// </summary>
-    public IReadOnlyDictionary<ushort, HidppDevice> Devices => _devices;
+    public IReadOnlyDictionary<ushort, HidppDevice> Devices {get{lock(_devices)return new Dictionary<ushort,HidppDevice>(_devices);}}
 
     /// <summary>
     /// Creates a new HidppDevice instance and adds it to the collection.
@@ -80,7 +80,7 @@ public class DeviceLifecycleManager
     /// <param name="deviceIdx">Device index to look up</param>
     /// <param name="device">The found device, or null if not found</param>
     /// <returns>True if device was found, false otherwise</returns>
-    public bool TryGetDevice(byte deviceIdx, out HidppDevice? device) => _devices.TryGetValue(deviceIdx, out device);
+    public bool TryGetDevice(byte deviceIdx, out HidppDevice? device){lock(_devices)return _devices.TryGetValue(deviceIdx,out device);}
 
     /// <summary>
     /// Check if a device initialization should proceed.
@@ -138,7 +138,7 @@ public class DeviceLifecycleManager
     /// <summary>
     /// Gets the current number of devices in the collection.
     /// </summary>
-    public int Count => _devices.Count;
+    public int Count {get{lock(_devices)return _devices.Count;}}
 
     /// <summary>
     /// Sets the expected device count for enumeration and the completion source to signal.

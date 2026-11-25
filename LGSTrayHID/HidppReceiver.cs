@@ -19,6 +19,7 @@ public enum DeviceTopology
 
 public class HidppReceiver : IDisposable
 {
+    public string? ContainerIdentity {get;init;}
     public HidDevicePtr DevShort { get; private set; } = IntPtr.Zero;
     public HidDevicePtr DevLong { get; private set; } = IntPtr.Zero;
     public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _lifecycleManager.Devices;
@@ -242,6 +243,9 @@ public class HidppReceiver : IDisposable
         return new Hidpp20(longFrame);
     }
 
+    public static bool MatchesRegisterReply(byte[] request,byte[] response)
+        =>request.Length>=4&&response.Length>=7&&(response[0]==request[0]||(request[0]==0x20&&response[0]==0x21))&&response[1]==request[1]&&response[3]==request[3]&&
+          (response[2]==request[2]||request[2]==0x80&&response[2]==0x81);
     public async Task<byte[]> WriteRead10(
         HidDevicePtr hidDevicePtr,
         byte[] buffer,
@@ -257,8 +261,7 @@ public class HidppReceiver : IDisposable
             return await _correlator.SendHidpp10AndWaitAsync(
                 hidDevicePtr,
                 buffer,
-                matcher: response => (response[2] == buffer[2] && response[3] == buffer[3]) ||
-                                     (buffer[2] == 0x80 && response[2] == 0x81 && response[3] == buffer[3]), // SET_REGISTER (0x80) → GET_REGISTER (0x81), same sub-address
+                matcher: response => MatchesRegisterReply(buffer,response),
                 timeout: timeout,
                 earlyExit: null
             );
@@ -280,8 +283,7 @@ public class HidppReceiver : IDisposable
             result = await _correlator.SendHidpp10AndWaitAsync(
                 hidDevicePtr,
                 buffer,
-                matcher: response => (response[2] == buffer[2] && response[3] == buffer[3]) ||
-                                     (buffer[2] == 0x80 && response[2] == 0x81 && response[3] == buffer[3]),
+                matcher: response => MatchesRegisterReply(buffer,response),
                 timeout: (int)attempt.Timeout.TotalMilliseconds,
                 earlyExit: null
             );
