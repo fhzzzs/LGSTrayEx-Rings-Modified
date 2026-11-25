@@ -4,7 +4,7 @@ Baseline: Rings.9 commit `70bebc5`. This roadmap documents repository changes, n
 
 | Workstream | Status | Acceptance |
 |---|---|---|
-| Device identity | Phase 1 implemented | Unlimited exact-ID/manual sources; unlimited unreported G HUB mode aliases only when family evidence is unambiguous; conflicting serials stay separate |
+| Device identity | Unbounded evidence-based grouping plus distinct upstream G HUB routes for ambiguous same-model devices | Unlimited exact-ID/manual sources; unlimited unreported G HUB mode aliases only when family evidence is unambiguous; conflicting serials stay separate |
 | Source selection | Phase 1 implemented | Stable usable source, explicit preference among usable fresh sources, fallback on loss or stale source |
 | Device state center | Owns grouping, inventory migration, source selection and confirmed snapshot; views consume shared snapshot | Single lifecycle snapshot consumed by renderer, notifications and settings; preserve states across rescan, suspend and mode changes |
 | Native taskbar | Native repeater-item reservation, fresh asynchronous geometry verification, strict mode, explicit fallback and timeout implemented; hardware validation pending | Actual native slot verified on Win11 multi-monitor; no fallback presented as native |

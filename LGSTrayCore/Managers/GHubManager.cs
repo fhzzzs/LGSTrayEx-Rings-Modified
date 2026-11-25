@@ -110,7 +110,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
     private DateTime _lastProtocolErrorNotification = DateTime.MinValue;
 
     // Maps raw GHub device IDs (unstable) to stable model-based IDs
-    private readonly Dictionary<string, string> _rawIdToStableId = new();
+    private readonly GHubIdentityRouter _identity=new();
 
     public GHubManager(IPublisher<IPCMessage> deviceEventBus, IWebSocketClientFactory wsFactory)
     {
@@ -132,6 +132,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         {
             DiagnosticLogger.LogWarning($"GHUB WebSocket disconnected: {info.Type}");
             DiagnosticLogger.Log("Clearing all GHUB devices.");
+            _identity.DisconnectedAll();
             _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));
         });
         _reconnectionSubscription = _ws.ReconnectionHappened.Subscribe(info =>
@@ -174,6 +175,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        _identity.DisconnectedAll();
         // Dispose subscriptions before disposing WebSocket client
         _messageSubscription?.Dispose();
         _messageSubscription = null;
@@ -281,6 +283,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
             int deviceCount = deviceInfos.Count;
             DiagnosticLogger.Log($"GHUB reported {deviceCount} device(s)");
+            _identity.BeginList(deviceInfos.OfType<JObject>().Where(o=>GHubJsonHelpers.HasRequiredFields(o,"id","extendedDisplayName")).Select(o=>(GHubJsonHelpers.GetStringOrDefault(o,"id","unknown"),GetStableId(o),HardwareIdentity.LogitechSerial(GHubJsonHelpers.GetStringOrDefault(o,"serialNumber",""))!=null)));
 
             foreach (var deviceToken in deviceInfos)
             {
@@ -321,8 +324,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
                 if(deviceName.Contains("G735", StringComparison.OrdinalIgnoreCase)){deviceType=DeviceType.Headset;hasBattery=true;}
                 // Build stable ID and map raw GHub ID for battery/removal routing
-                string stableId = GetStableId(deviceObj);
-                _rawIdToStableId[deviceId] = stableId;
+                string stableId = _identity.Register(deviceId,GetStableId(deviceObj),HardwareIdentity.LogitechSerial(GHubJsonHelpers.GetStringOrDefault(deviceObj,"serialNumber",""))!=null);
 
                 // Publish device with stable ID
                 _deviceEventBus.Publish(new InitMessage(
@@ -421,8 +423,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
             if(deviceName.Contains("G735", StringComparison.OrdinalIgnoreCase)){deviceType=DeviceType.Headset;hasBattery=true;}
                 // Build stable ID and map raw GHub ID for battery/removal routing
-            string stableId = GetStableId(payload);
-            _rawIdToStableId[deviceId] = stableId;
+            string stableId = _identity.Register(deviceId,GetStableId(payload),HardwareIdentity.LogitechSerial(GHubJsonHelpers.GetStringOrDefault(payload,"serialNumber",""))!=null);
 
             // Publish device with stable ID
             _deviceEventBus.Publish(new InitMessage(
@@ -505,7 +506,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                 percentage = Math.Clamp(percentage.Value, 0, 100);
             }
 
-            string stableId = _rawIdToStableId.GetValueOrDefault(deviceId, deviceId);
+            string stableId = _identity.Resolve(deviceId);
             _deviceEventBus.Publish(new UpdateMessage(
                 stableId,
                 percentage.Value,
@@ -532,7 +533,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         try
         {
             string deviceId = payload["id"]?.ToString() ?? "unknown";
-            string stableId = _rawIdToStableId.GetValueOrDefault(deviceId, deviceId);
+            string stableId = _identity.Resolve(deviceId);
             string state = payload["state"]?.ToString()?.ToLower() ?? "";
 
             DiagnosticLogger.Log($"GHUB device state change - {stableId}: {state}");
@@ -542,8 +543,10 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
             {
                 case "not_connected":
                     // Device disconnected - publish removal using stable ID
-                    _deviceEventBus.Publish(new RemoveMessage(stableId, "ghub_disconnect"));
-                    DiagnosticLogger.Log($"Device removed via GHUB disconnect - {stableId}");
+                    if(_identity.Disconnect(deviceId,out var removed)){
+                        _deviceEventBus.Publish(new RemoveMessage(removed,"ghub_disconnect"));
+                        DiagnosticLogger.Log($"Device removed via GHUB disconnect - {removed}");
+                    }
                     break;
 
                 case "active":

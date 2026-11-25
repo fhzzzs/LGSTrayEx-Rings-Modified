@@ -162,4 +162,20 @@ public class GHubManagerDeviceIdChangeTests
         Assert.NotNull(wildcardRemoval);
         Assert.Equal("rediscover_cleanup", wildcardRemoval.reason);
     }
+    [Fact]
+    public async Task SameModelTwoRawDevicesAreNotCollapsedBeforeUiGrouping()
+    {
+        var (manager,_,mockWs,published)=CreateTestContext();
+        await manager.StartAsync(CancellationToken.None);
+        mockWs.SimulateDeviceListResponse(("dev00000001","Same Model",true),("dev00000002","Same Model",true));
+        await Task.Delay(50);
+        var ids=published.OfType<InitMessage>().Where(x=>x.deviceName=="Same Model").Select(x=>x.deviceId).Distinct().ToArray();
+        Assert.Equal(2,ids.Length);
+        published.Clear();
+        mockWs.SimulateBatteryUpdate("dev00000001",90,false);
+        mockWs.SimulateBatteryUpdate("dev00000002",60,false);
+        await Task.Delay(50);
+        var updates=published.OfType<UpdateMessage>().ToArray();
+        Assert.Equal(2,updates.Select(x=>x.deviceId).Distinct().Count());
+    }
 }

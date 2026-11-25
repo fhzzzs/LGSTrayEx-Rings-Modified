@@ -33,7 +33,7 @@ internal static class DeviceIdentityManager
     private static bool CompatibleModelSources(TaskbarBattery[] rows){
         int native=rows.Count(d=>LogitechProvider(d)=="Native");
         var ghub=rows.Where(d=>LogitechProvider(d)=="GHub").ToArray();
-        if(native>1||ghub.Length<1)return false;
+        if(native>1||ghub.Length<1||ghub.Any(d=>d.Key.Contains("#raw:",StringComparison.Ordinal)))return false;
         if(ConflictingHardware(rows))return false;
         if(ghub.Length==1)return native==1;
         var family=GHubModeFamily(ghub[0]);
