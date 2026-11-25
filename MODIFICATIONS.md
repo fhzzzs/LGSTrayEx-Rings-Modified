@@ -55,3 +55,6 @@ Passive native Sony/Nintendo/8BitDo report readers; scoped legacy 0x0D fallback;
 
 ## 2.0.0 completion checkpoint 3 (unbuilt)
 GameSir G7 edition IDs and safe WGI fallback, Cyclone 2 live report parser and opt-in status request; sleep/resume scan control, UIA caching/metrics, actual HID reader completion, partial handle cleanup, stable ring geometry caching, timestamp-only rendering path, startup phase instrumentation, and CSV resource delta analysis. 22 and 30–35 advanced; no build or hardware acceptance claimed.
+
+## v2.0.1 — development build retry
+Keep the obsolete UseAsus field ignored; the current explicit provider switch uses AsusHidEnabled, defaults on, and is independently persisted. Preserve the original regression test and add a round-trip test for the new field. Version advanced for the test package only; no formal release or hardware certification.

@@ -15,6 +15,16 @@ public class RingPreferencesTests
         var p=System.Text.Json.JsonSerializer.Deserialize<LGSTrayUI.RingPreferences>("{\"UseAsus\":false,\"Gap\":9}")!;
         Assert.Equal(9d,p.Gap);
         Assert.DoesNotContain("UseAsus",System.Text.Json.JsonSerializer.Serialize(p));
+        Assert.True(p.AsusHidEnabled);
+    }
+    [Fact]
+    public void CurrentAsusHidTogglePersistsWithoutRevivingLegacyField()
+    {
+        var p=RingSettingsStore.Parse("{\"UseAsus\":true,\"AsusHidEnabled\":false}");
+        Assert.False(p.AsusHidEnabled);
+        var json=RingSettingsStore.Snapshot(p);
+        Assert.DoesNotContain("UseAsus",json);
+        Assert.False(RingSettingsStore.Parse(json).AsusHidEnabled);
     }
     [Fact]
     public void DefaultAnimationTimingsMatchDesign()

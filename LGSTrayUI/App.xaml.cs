@@ -200,7 +200,7 @@ public partial class App : Application
         try{
             _hostStart=host.StartAsync(_startupCancellation.Token);
             await _hostStart;
-            if(!_exitRequested){RingDiagnostics.Startup(startupWatch.ElapsedMilliseconds);UpdateTransaction.MarkReady();Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,new Action(()=>{if(!_exitRequested)EnableEfficiencyMode();}));}
+            if(!_exitRequested){RingDiagnostics.Startup(startupWatch.ElapsedMilliseconds);UpdateTransaction.MarkReady();_ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,new Action(()=>{if(!_exitRequested)EnableEfficiencyMode();}));}
         }catch(OperationCanceledException) when(_exitRequested){}
         catch(Exception ex){DiagnosticLogger.LogError("Host start failed: "+ex.Message);RequestExit();}
     }

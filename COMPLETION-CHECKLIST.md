@@ -1,8 +1,6 @@
-# 2.0.0 completion checklist — development only
+# 2.0.1 completion checklist — development only
 
-Version and packaging unchanged. Baseline main is b2ef07c. Development
-commits are skipped by CI until the final integration is requested. Nothing
-below claims a Windows build, attached hardware validation, or a soak test.
+Baseline main is b2ef07c; packaging unchanged. At the user's request the development build version is now 2.0.1. The first checkpoint CI compiled successfully but failed the obsolete ASUS toggle regression; the new field is isolated and a retry is requested. Nothing below claims attached hardware validation or a soak test.
 The existing main 2.0.0 CI success is for the baseline only.
 
 | Original item | Work in this checkpoint | Still required |

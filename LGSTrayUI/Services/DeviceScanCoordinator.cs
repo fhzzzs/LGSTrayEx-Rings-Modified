@@ -28,7 +28,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
             new BatteryProvider("ble",c=>c.UseBle,c=>TimeSpan.FromSeconds(Math.Clamp(c.BleSeconds,5,120)),TimeSpan.FromSeconds(25),BluetoothBatteryReader.ReadAsync),
             new BatteryProvider("gip",c=>c.UseGip,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>Worker(GipBatteryReader.Read,t)),
             new BatteryProvider("xinput",c=>c.UseXInput,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>Worker(XInputBatteryReader.Read,t)),
-            new BatteryProvider("asus",c=>c.UseAsus,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(30),t=>Worker(()=>AsusBatteryReader.Read(t),t)),
+            new BatteryProvider("asus",c=>c.AsusHidEnabled,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(30),t=>Worker(()=>AsusBatteryReader.Read(t),t)),
             new BatteryProvider("astro",c=>c.UseAstro,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadAstro(t),t)),
             new BatteryProvider("controller-hid",c=>c.UseControllerHid,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>{bool query=RingConfig.Current.GameSirCycloneQuery;return Worker(()=>AsusBatteryReader.ReadControllerInput(t,query),t);})
         },dispatcher,()=>Changed?.Invoke());

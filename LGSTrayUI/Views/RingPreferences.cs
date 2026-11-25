@@ -58,7 +58,7 @@ internal sealed class RingPreferences
     internal string Foreground(string key,string field,bool light)=>DeviceInk(key,field,AutoContrast&&light?(field=="Track"?"#000000":"#20242C"):field=="Icon"?Icon:field=="Text"?Text:Track);
     internal AlertAudio Audio(string key,int threshold)=>AlertSounds.TryGetValue(key,out var own)&&own.TryGetValue(threshold,out var a)?a:AlertSounds.TryGetValue("",out var global)&&global.TryGetValue(threshold,out var b)?b:new AlertAudio{Sound=threshold<=5?"Alert":threshold<=10?"Bell":"Soft Ding"};
     public double PollSeconds {get;set;}=2; public double BleSeconds {get;set;}=15; public bool UseGip {get;set;}=true; public bool UseXInput {get;set;}=true; public bool UseBle {get;set;}=true;
-    public bool UseAsus {get;set;}=true; public bool UseAstro {get;set;}=true; public bool UseControllerHid {get;set;}=true;
+    public bool AsusHidEnabled {get;set;}=true; public bool UseAstro {get;set;}=true; public bool UseControllerHid {get;set;}=true;
     public bool GameSirCycloneQuery {get;set;}=false;
     public bool Hover {get;set;}=true;
     internal double Ms(double n)=>Animate?Math.Clamp(n,0,10000)/Math.Clamp(Speed,.5,2):0;
