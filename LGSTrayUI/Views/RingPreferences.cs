@@ -70,6 +70,8 @@ internal static class RingConfig
     internal static event Action? Changed;
     internal static event Action<PreferenceArea>? AreasChanged;
     private static PreferenceFingerprint? previous;
+    private static bool? systemLight;
+    internal static void RefreshSystemTheme(){bool light=RingPreferences.SystemLight();if(systemLight==light)return;bool initialized=systemLight.HasValue;systemLight=light;if(initialized)Changed?.Invoke();}
     private static string PathName=>Path.Combine(AppDataPaths.LocalAppDataDir,"rings-settings.json");
     private static DispatcherTimer? timer;
     private static RingPreferences Load()=>RingSettingsStore.Load(PathName);

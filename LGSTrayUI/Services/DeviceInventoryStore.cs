@@ -15,7 +15,7 @@ internal static class DeviceInventoryStore
         foreach(var file in new[]{path,path+".bak"}){
             if(!File.Exists(file))continue;
             try{
-                return (JsonSerializer.Deserialize<KnownDevice[]>(File.ReadAllText(file))??[])
+                return (JsonSerializer.Deserialize<KnownDevice[]>(File.ReadAllText(file))??throw new FormatException("Null device inventory"))
                     .Where(x=>x!=null&&!string.IsNullOrWhiteSpace(x.Key)&&TaskbarBattery.Rank(x.Type)<4)
                     .Select(x=>new TaskbarBattery(x.Type,x.Name??x.Key,null,"离线",false,x.Updated,x.Key,PhysicalId:x.PhysicalId)).ToArray();
             }catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory: "+ex.Message);}

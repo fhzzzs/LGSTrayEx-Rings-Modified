@@ -58,6 +58,7 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        var startupWatch=System.Diagnostics.Stopwatch.StartNew();
         const string mutexName = "LGSTrayBattery_SingleInstance";
 
         // The 'true' here attempts to acquire ownership immediately
@@ -195,7 +196,7 @@ public partial class App : Application
         try{
             _hostStart=host.StartAsync(_startupCancellation.Token);
             await _hostStart;
-            if(!_exitRequested)UpdateTransaction.MarkReady();
+            if(!_exitRequested){RingDiagnostics.Startup(startupWatch.ElapsedMilliseconds);UpdateTransaction.MarkReady();}
         }catch(OperationCanceledException) when(_exitRequested){}
         catch(Exception ex){DiagnosticLogger.LogError("Host start failed: "+ex.Message);RequestExit();}
     }
@@ -260,7 +261,7 @@ public partial class App : Application
 
     internal async void RequestExit()
     {
-        if(!Dispatcher.CheckAccess()){Dispatcher.BeginInvoke(new Action(RequestExit));return;}
+        if(!Dispatcher.CheckAccess()){_ = Dispatcher.BeginInvoke(new Action(RequestExit));return;}
         if(_exitRequested)return;
         _exitRequested=true;
         var watch=System.Diagnostics.Stopwatch.StartNew();

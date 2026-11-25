@@ -24,6 +24,7 @@ public static class DiagnosticLogger
     /// Number of writes between trim checks. Avoids checking file size on every write.
     /// </summary>
     private const int TrimCheckInterval = 100;
+    private const long MaxLogBytes = 4L * 1024 * 1024;
 
     /// <summary>
     /// Full path of the diagnostic log file. Lives in <see cref="AppDataPaths.LocalAppDataDir"/>
@@ -212,6 +213,12 @@ public static class DiagnosticLogger
             if (!File.Exists(_logFilePath)) return;
 
             if (_maxLines <= 0) return;
+            // Keep one previous segment, rather than scanning an arbitrarily large file.
+            if (new FileInfo(_logFilePath).Length > MaxLogBytes)
+            {
+                File.Move(_logFilePath, _logFilePath + ".1", true);
+                return;
+            }
             var tail = new Queue<string>();
             long count = 0;
             foreach (var line in File.ReadLines(_logFilePath))

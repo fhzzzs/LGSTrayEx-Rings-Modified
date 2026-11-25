@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using LGSTrayPrimitives;
 
 namespace LGSTrayUI;
@@ -12,6 +13,9 @@ internal static class RingDiagnostics
 {
     private static readonly ConcurrentDictionary<string,ProviderDiagnostic> providers=new(StringComparer.Ordinal);
     private static DeviceGroup[] groups=[];
+    private static long startupMs=-1;
+    internal static void Startup(long elapsedMs)=>startupMs=elapsedMs;
+    [DllImport("user32.dll")] private static extern uint GetGuiResources(nint process,uint flags);
     private static readonly ConcurrentDictionary<string,string> selected=new(StringComparer.Ordinal);
     internal static void Provider(ProviderDiagnostic value)=>providers[value.Id]=value;
     internal static void Observe(DeviceGroup[] snapshot){groups=snapshot;var keys=snapshot.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);foreach(var k in selected.Keys)if(!keys.Contains(k))selected.TryRemove(k,out _);}
@@ -20,7 +24,11 @@ internal static class RingDiagnostics
         var b=new StringBuilder();
         b.AppendLine("Battery Monitor · Rings "+RingsUpdateService.Current);
         b.AppendLine("Windows "+Environment.OSVersion.Version+" · "+System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
-        using(var p=Process.GetCurrentProcess())b.AppendLine($"Working set: {p.WorkingSet64/1048576d:F1} MiB · Threads: {p.Threads.Count}");
+        using(var p=Process.GetCurrentProcess()){
+            b.AppendLine($"Working set: {p.WorkingSet64/1048576d:F1} MiB · Private: {p.PrivateMemorySize64/1048576d:F1} MiB · Threads: {p.Threads.Count} · Handles: {p.HandleCount}");
+            b.AppendLine($"GDI objects: {GetGuiResources(p.Handle,0)} · USER objects: {GetGuiResources(p.Handle,1)} · CPU time: {p.TotalProcessorTime.TotalSeconds:F1}s");
+        }
+        if(startupMs>=0)b.AppendLine($"Startup to host ready: {startupMs} ms");
         b.AppendLine($"Animation channels: {RingFrameClock.ActiveCount} · Devices: {groups.Length}");
         b.AppendLine($"Diagnostic log: {AppDataPaths.LocalAppDataDir}\\diagnostic.log");
         b.AppendLine();b.AppendLine("Providers:");

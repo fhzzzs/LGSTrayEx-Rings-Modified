@@ -92,7 +92,7 @@ internal sealed class RingStripAnimator : IDisposable
             if(t>=1)Finish();
         });
     }
-    private IEnumerable<Entry> Sorted()=>entries.Values.OrderBy(e=>RingConfig.Current.Order.IndexOf(e.Data.Key) is int i&&i>=0?i:int.MaxValue).ThenBy(e=>TaskbarBattery.Rank(e.Data.Type)).ThenBy(e=>e.Data.Key,StringComparer.Ordinal);
+    private IEnumerable<Entry> Sorted()=>entries.Values.OrderBy(e=>TaskbarBattery.Rank(e.Data.Type)).ThenBy(e=>RingConfig.Current.Order.IndexOf(e.Data.Key) is int i&&i>=0?i:int.MaxValue).ThenBy(e=>e.Data.Key,StringComparer.Ordinal);
     internal void Update(IEnumerable<TaskbarBattery> readings)
     {
         if(disposed)return;
@@ -213,7 +213,7 @@ internal sealed class RingStripAnimator : IDisposable
         }
     }
     public void Dispose(){
-        disposed=true;canvas.IsVisibleChanged-=VisibilityChanged;timer.Stop();StopMove();canvas.Children.Remove(divider);
+        disposed=true;canvas.IsVisibleChanged-=VisibilityChanged;timer.Stop();timer.Tick-=Tick;StopMove();canvas.Children.Remove(divider);
         foreach(var k in entries.Keys.ToArray())Remove(k);
     }
 }

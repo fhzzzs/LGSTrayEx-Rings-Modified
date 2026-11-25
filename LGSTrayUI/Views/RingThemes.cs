@@ -17,7 +17,7 @@ internal static class RingThemes
     private static Dictionary<string,RingPreferences> Load(){
         foreach(var file in new[]{Store,Store+".bak"})try{
             if(!File.Exists(file))continue;
-            var values=JsonSerializer.Deserialize<Dictionary<string,RingPreferences>>(File.ReadAllText(file))??new();
+            var values=JsonSerializer.Deserialize<Dictionary<string,RingPreferences>>(File.ReadAllText(file))??throw new FormatException("Null theme inventory");
             return values.Where(x=>x.Value!=null).ToDictionary(x=>x.Key,x=>Snapshot(RingSettingsStore.Parse(JsonSerializer.Serialize(x.Value))));
         }catch(Exception ex){DiagnosticLogger.LogWarning("Theme load: "+ex.Message);}
         return new();

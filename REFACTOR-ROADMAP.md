@@ -56,3 +56,35 @@ Root launcher plus private app/ folder; no shipped PDBs. Keep WPF and HID librar
 - 16: Add deterministic source churn, 50-source grouping, rapid disconnect/reconnect, simulated 24-hour wake, writer coalescing and managed update cleanup tests. These are simulated tests; actual 24-hour running, hardware and shell interaction are not proven by CI.
 
 The final build retains the root launcher plus app directory. No native left placement code.
+
+
+## Rings 13–15 — consolidated hardening (15.0.0)
+Source-level work builds on Rings 12 and the 12 compilation repair. Existing behavior and conservative identity rules are retained.
+| Item | Implementation / evidence | Remaining validation |
+|---|---|---|
+| 17 | Evidence-based identity grouping and provisional GIP/XInput link; invalid readings excluded from best-source priority | Real GameSir and simultaneous identical controllers |
+| 18 | Persistent logical identity across provider changes; mode-change regression | USB/BLE/2.4 GHz switching where hardware exposes stable evidence |
+| 19 | Existing deduplicated resume and suppression, coalesced gamepad event rescans | S3/S0 resume on hardware |
+| 20 | TaskbarCreated invalidation and generation-safe shell geometry | Restart Explorer on Windows 11 |
+| 21 | Existing 2.5 s grouped connection debounce; churn regression | Real short disconnects |
+| 22 | Per-provider exceptions isolated; GIP global enumeration failure no longer appears as successful empty scan | Native APIs that ignore cancellation |
+| 23 | Bounded adaptive polling and failure backoff, tests | Reconnect latency |
+| 24 | Exact, band, stale and unknown preserved; invalid GIP capacity no longer clamped to 100; idle/full distinguished | Device-specific capacity reporting |
+| 25 | Bounded per-ring text cache; cleanup of watchers and animation timer; memory diagnostics | 168-hour physical soak, memory trend |
+| 26 | Icon handle disposal, GDI/USER/handle diagnostics | Long running GDI/USER trend |
+| 27 | No visual invalidation for timestamp-only changes; avoid forced snapshot updates | Profiling |
+| 28 | Frozen shared glyphs and single-entry text/DPI/color cache | Rendering profiling |
+| 29 | Adaptive idle polling and timer cadence | Hardware reconnect timing |
+| 30 | Existing background startup scans; measure host-ready startup; avoid redundant snapshot update | Cold-start benchmarks |
+| 31 | Bounded log trim, mutex timeout, one-segment size rotation when line limit enabled | Large log and crash recovery |
+| 32 | Owned HID process tree cleanup; existing parent monitor | Shutdown/resume with actual HID worker |
+| 33 | DPI-aware text cache, finite placement guards and DPI geometry regression | Live 100–200% DPI |
+| 34 | Monitor bounds and negative-coordinate tests; primary taskbar overlay remains single-instance | Mixed DPI, primary monitor changes |
+| 35 | Detect Windows system theme changes without writing preferences | Live dark/light switch |
+| 36 | Fixed category order, persisted drag order inside each category | Interactive drag and restart |
+| 37 | Existing generation-safe gray/fade animation; shared frame clock and fewer redundant renders | Live offline/reconnect animation |
+| 38 | Existing charging animation and charge-state display; full/invalid GIP reading correction | Real charging/full state |
+| 39 | Semantic backup preservation, invalid inventory recovery and malformed preference sanitization | Corrupted settings regression in CI |
+| 40 | Keep one root launcher and private app/ runtime/docs, no PDBs; version defaults unified | Portable smoke test in Windows CI |
+
+No new native placement or guessed cross-protocol serial mapping. Hardware without common identity evidence cannot be automatically identified with certainty; manual links/splits remain available. The simulated tests do not certify a 168-hour soak or resource target. Publish only after Windows tests and real shell/hardware verification.

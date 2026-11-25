@@ -14,6 +14,8 @@ public sealed class BatteryRing : FrameworkElement
     private static readonly Geometry Bolt=Geometry.Parse("M47,11 L42,20 H46 L44,27 L52,17 H48 L51,11 Z");
     static BatteryRing(){foreach(var glyph in Glyphs)glyph.Freeze();Bolt.Freeze();}
     private double shinePeriod,shineStart;
+    private (string Text,string Font,bool Bold,double Size,Color Color,double Dpi)? textKey;
+    private FormattedText? cachedText;
     private readonly object shineKey=new();
     private readonly System.Collections.Generic.Dictionary<DependencyProperty,object> channels=new();
     internal RingPreferences? Preferences {get;set;}
@@ -60,6 +62,9 @@ public sealed class BatteryRing : FrameworkElement
         if(shinePeriod>0&&d.Charging&&!d.Offline&&level>0&&level<100){var (start,end)=ShineSegment((double)GetValue(ShinePhaseProperty),level,c.ChargeLength);if(end-start>.01){var glow=new SolidColorBrush(RingPreferences.Ink(c.DeviceInk(d.Key,"ChargeHighlight",c.ChargeHighlight))){Opacity=Math.Clamp(c.ChargeBrightness/100,0,1)};dc.DrawGeometry(null,new Pen(glow,w*.85){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round},Arc(start,end,rad));}}
         var muted=RingPreferences.Ink(c.DeviceInk(d.Key,"Offline",c.Offline));var icon=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Icon",light)),muted,Gray));var text=new SolidColorBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Text",light)),muted,Gray));var outline=new Pen(icon,Math.Clamp(c.IconStroke,.5,4)){LineJoin=PenLineJoin.Round,StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};
         dc.PushTransform(new TranslateTransform(c.IconX,c.IconY));dc.PushTransform(new ScaleTransform(c.IconScale/100,c.IconScale/100,32,21.5));dc.DrawGeometry(null,outline,Glyphs[Math.Clamp(TaskbarBattery.Rank(d.Type),0,3)]);dc.Pop();dc.Pop();
-        var ft=new FormattedText(!d.Offline&&d.ShortLabel==null&&d.Level.HasValue?$"{Math.Round(level)}%":d.Percent,CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily(c.Font),FontStyles.Normal,c.Bold?FontWeights.SemiBold:FontWeights.Normal,FontStretches.Normal),Math.Clamp(c.FontSize,8,20),text,VisualTreeHelper.GetDpi(this).PixelsPerDip);dc.DrawText(ft,new Point(32-ft.Width/2+c.TextX,c.TextY-ft.Baseline));
+        string label=!d.Offline&&d.ShortLabel==null&&d.Level is >=0 and <=100?$"{Math.Round(level)}%":d.Percent;
+        var key=(label,c.Font,c.Bold,Math.Clamp(c.FontSize,8,20),text.Color,VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        if(cachedText==null||textKey!=key){text.Freeze();cachedText=new FormattedText(label,CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily(c.Font),FontStyles.Normal,c.Bold?FontWeights.SemiBold:FontWeights.Normal,FontStretches.Normal),key.Item4,text,key.Item6);textKey=key;}
+        var ft=cachedText!;dc.DrawText(ft,new Point(32-ft.Width/2+c.TextX,c.TextY-ft.Baseline));
         if(d.Charging&&!d.Offline&&c.ChargeShowBolt){var bolt=new SolidColorBrush(RingPreferences.Ink(c.DeviceInk(d.Key,"ChargeBolt",c.ChargeBolt))){Opacity=Math.Clamp(c.ChargeBoltOpacity/100,0,1)};dc.PushTransform(new TranslateTransform(c.ChargeBoltX,c.ChargeBoltY));dc.PushTransform(new ScaleTransform(c.ChargeBoltScale/100,c.ChargeBoltScale/100,47,19));dc.DrawGeometry(bolt,null,Bolt);dc.Pop();dc.Pop();}dc.Pop();dc.Pop();}
 }

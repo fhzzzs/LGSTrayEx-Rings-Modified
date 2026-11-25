@@ -42,6 +42,12 @@ internal sealed class ProviderScheduler:IDisposable
     private readonly DispatcherTimer timer;
     private readonly Action changed;
     private bool disposed;
+    internal static TimeSpan NextDelay(TimeSpan period,int failures,bool online)
+    {
+        double seconds=Math.Clamp(period.TotalSeconds,.25,120);
+        if(failures>0)return TimeSpan.FromSeconds(Math.Min(120,seconds*Math.Pow(2,Math.Min(4,failures))));
+        return TimeSpan.FromSeconds(online?seconds:Math.Max(seconds,Math.Min(15,seconds*2)));
+    }
     internal ProviderScheduler(IEnumerable<IBatteryProvider> providers,Dispatcher dispatcher,Action changed)
     {
         this.changed=changed;slots=providers.Select(p=>new Slot(p)).ToArray();
@@ -65,6 +71,8 @@ internal sealed class ProviderScheduler:IDisposable
                 if(!enabled&&s.Rows.Count>0){s.Rows=[];changed();}Publish(s);}
             if(enabled&&s.Flight==null&&now>=s.Next)_=Run(s);
         }
+        var next=slots.Where(s=>s.Enabled&&s.Flight==null).Select(s=>(s.Next-now).TotalMilliseconds).DefaultIfEmpty(1000).Min();
+        timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,1000));
     }
     private async Task Run(Slot s)
     {
@@ -75,15 +83,15 @@ internal sealed class ProviderScheduler:IDisposable
             cts.Token.ThrowIfCancellationRequested();
             if(disposed||generation!=s.Generation)return;
             s.Failures=0;s.Error=null;s.Updated=DateTimeOffset.UtcNow;if(!s.Rows.SequenceEqual(rows)){s.Rows=rows;changed();}
-        }catch(OperationCanceledException){if(!disposed&&generation==s.Generation)s.Failures++;}
-        catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures++;s.Error=ex.Message;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
+        }catch(OperationCanceledException){if(!disposed&&generation==s.Generation){s.Failures=Math.Min(s.Failures+1,100);s.Error="Scan timed out";}}
+        catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures=Math.Min(s.Failures+1,100);s.Error=ex.Message;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
         finally{
             if(!disposed&&generation==s.Generation&&s.Failures>=2&&s.Rows.Any(r=>r.IsConnected)){
                 s.Rows=s.Rows.Select(r=>r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}).ToArray();changed();
             }
             s.Flight=null;s.LastMs=watch.Elapsed.TotalMilliseconds;Publish(s);
             if(!disposed)s.Next=generation!=s.Generation?DateTimeOffset.MinValue:DateTimeOffset.UtcNow+
-                TimeSpan.FromSeconds(Math.Min(120,s.Provider.Interval(RingConfig.Current).TotalSeconds*Math.Pow(2,Math.Min(4,s.Failures))));
+                NextDelay(s.Provider.Interval(RingConfig.Current),s.Failures,s.Rows.Any(r=>r.IsConnected));
         }
     }
     public void Dispose(){if(disposed)return;disposed=true;timer.Stop();timer.Tick-=Tick;foreach(var s in slots)s.Flight?.Cancel();}

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using LGSTrayPrimitives;
@@ -29,6 +30,18 @@ internal static class RingSettingsStore
         foreach(var key in c.AlertSounds.Where(x=>x.Value==null).Select(x=>x.Key).ToArray())c.AlertSounds.Remove(key);
         foreach(var map in c.AlertSounds.Values)foreach(var key in map.Where(x=>x.Value==null).Select(x=>x.Key).ToArray())map.Remove(key);
         c.Rules??="20:30,10:15,5:5";
+        foreach(var map in new[]{c.PhysicalSourceIds,c.PhysicalEvidenceIds,c.PhysicalSourceEvidence,c.ControllerHistoryHints,c.AutomaticAliases,c.DeviceAliases,c.PreferredSources})
+            foreach(var key in map.Where(x=>string.IsNullOrWhiteSpace(x.Key)||string.IsNullOrWhiteSpace(x.Value)).Select(x=>x.Key).ToArray())map.Remove(key);
+        foreach(var list in new[]{c.Order,c.Hidden,c.IgnoredDevices,c.SeparateDeviceSources,c.ModelGroupRoots})
+            list.RemoveAll(string.IsNullOrWhiteSpace);
+        c.Order=c.Order.Distinct(StringComparer.Ordinal).ToList();
+        if(string.IsNullOrWhiteSpace(c.Font))c.Font="Segoe UI";
+        c.PollSeconds=Math.Clamp(c.PollSeconds,.5,60);c.BleSeconds=Math.Clamp(c.BleSeconds,5,120);
+        c.LowAt=Math.Clamp(c.LowAt,1,100);c.CriticalAt=Math.Clamp(c.CriticalAt,0,c.LowAt);
+        c.Speed=Math.Clamp(c.Speed,.5,2);
+        c.Size=Math.Clamp(c.Size,24,52);c.Gap=Math.Clamp(c.Gap,0,20);
+        c.WaitMs=Math.Clamp(c.WaitMs,0,10000);c.StaggerMs=Math.Clamp(c.StaggerMs,0,250);
+        c.ChargePeriod=Math.Clamp(c.ChargePeriod,250,10000);
         c.SchemaVersion=Version;
         c.NotificationWidth=Math.Clamp(c.NotificationWidth,240,420);c.NotificationSeconds=Math.Clamp(c.NotificationSeconds,2,15);
         c.NotificationOpacity=Math.Clamp(c.NotificationOpacity,60,100);
@@ -56,7 +69,9 @@ internal static class RingSettingsStore
             if(File.Exists(path)){
                 // Do not overwrite a good backup with a damaged/unreadable JSON file.
                 bool valid=false;
-                try{using var doc=JsonDocument.Parse(File.ReadAllText(path));valid=doc.RootElement.ValueKind==JsonValueKind.Object||doc.RootElement.ValueKind==JsonValueKind.Array;}catch{}
+                try{var old=File.ReadAllText(path);using var doc=JsonDocument.Parse(old);using var next=JsonDocument.Parse(json);valid=doc.RootElement.ValueKind==next.RootElement.ValueKind;
+                    if(valid&&next.RootElement.ValueKind==JsonValueKind.Object&&next.RootElement.TryGetProperty("SchemaVersion",out _))Parse(old);
+                }catch{valid=false;}
                 if(valid)File.Replace(temp,path,path+".bak",true);
                 else File.Move(temp,path,true);
             }else File.Move(temp,path);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using LGSTrayPrimitives;
@@ -12,28 +13,28 @@ namespace LGSTrayUI;
 // stale/other-monitor/other-layout result cannot authorize painting.
 internal static class TaskbarAutomationProbe
 {
-    private sealed record Snapshot(nint Bar,TaskbarPlacement.PixelRect Bounds,long Started,long Completed,Rect[] Controls);
+    private sealed record Snapshot(nint Bar,TaskbarPlacement.PixelRect Bounds,long Started,long Completed,long Generation,Rect[] Controls);
     private static Task<Snapshot?>? pending;
     private static Snapshot? last;
-    private static long invalidated;
-    internal static void Invalidate(){invalidated=Environment.TickCount64;last=null;}
+    private static long generation;
+    internal static void Invalidate()=>Interlocked.Increment(ref generation);
     internal static bool Fresh(long now,long started,long completed)
         =>completed>=started&&completed<=now&&now-started<=1500;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
     {
         controls=[];
-        long now=Environment.TickCount64;
+        long now=Environment.TickCount64;long currentGeneration=Volatile.Read(ref generation);
         if(pending?.IsCompleted==true){
             if(pending.IsCompletedSuccessfully)last=pending.Result;
             pending=null;
         }
-        bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Started>=invalidated&&Fresh(now,last.Started,last.Completed);
+        bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
         if(pending==null&&(!matching||now-last!.Completed>=400))
-            pending=Task.Run(()=>Capture(bar,bounds));
+            pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         if(!matching||last!.Controls.Length==0)return false;
         controls=last.Controls;return true;
     }
-    private static Snapshot? Capture(nint bar,TaskbarPlacement.PixelRect bounds)
+    private static Snapshot? Capture(nint bar,TaskbarPlacement.PixelRect bounds,long captureGeneration)
     {
         long start=Environment.TickCount64;
         try{
@@ -54,7 +55,7 @@ internal static class TaskbarAutomationProbe
                     result.Add(r);
                 }
             }
-            return new(bar,bounds,start,Environment.TickCount64,result.ToArray());
+            return new(bar,bounds,start,Environment.TickCount64,captureGeneration,result.ToArray());
         }catch(Exception ex){DiagnosticLogger.Verbose("Taskbar UIA probe: "+ex.Message);return null;}
     }
 }

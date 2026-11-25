@@ -107,14 +107,14 @@ public partial class TaskbarBatteryWindow : Window
         var c=RingConfig.Current;
         bool changed=_deviceCenter.RefreshInventory(TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings),c);
         if(changed){SaveKnownDevices();RingConfig.Save();}
-        ApplySnapshot(ReadSnapshot(),true);
+        ApplySnapshot(ReadSnapshot());
     }
     private void SettingsChanged(PreferenceArea areas){
         if(areas.HasFlag(PreferenceArea.Identity)){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2));RefreshReadings();}
         if(areas.HasFlag(PreferenceArea.Providers))_scanner.Poll(DateTimeOffset.UtcNow);
         if(areas.HasFlag(PreferenceArea.Layout)){ApplySnapshot(ReadSnapshot(),true);_animator.RefreshLayout();}
     }
-    private void StateTick(object? sender,EventArgs e){if(!_closed)ApplySnapshot(ReadSnapshot());}
+    private void StateTick(object? sender,EventArgs e){if(!_closed){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());}}
     private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
@@ -133,12 +133,13 @@ public partial class TaskbarBatteryWindow : Window
     {
         var c=RingConfig.Current;
         bool changed=force||!_rows.SequenceEqual(snapshot.Rows);
+        bool groupingChanged=_groups.Length!=snapshot.Groups.Length||!_groups.Select(g=>(g.Reading.Key,g.Ignored,g.Inferred,string.Join(",",g.Sources.Select(d=>d.Key)))).SequenceEqual(snapshot.Groups.Select(g=>(g.Reading.Key,g.Ignored,g.Inferred,string.Join(",",g.Sources.Select(d=>d.Key)))));
         _groups=snapshot.Groups;_rows=snapshot.Rows;RingDiagnostics.Observe(_groups);
         if(changed){
             _animator.Update(_rows);
             foreach(var child in RingItems.Children)if(child is Button b)ToolTipService.SetIsEnabled(b,c.Hover);
-            _settings?.UpdateDevices(_rows,_groups);
         }
+        if(changed||groupingChanged)_settings?.UpdateDevices(_rows,_groups);
         _notifications.Observe(snapshot,DateTimeOffset.UtcNow);
     }
 
@@ -222,6 +223,7 @@ public partial class TaskbarBatteryWindow : Window
         _positionTimer.Tick -= Reposition;
         _tray.LogiDevices.CollectionChanged -= DevicesChanged;
         foreach (var device in _watched) device.PropertyChanged -= DeviceChanged;
+        _watched.Clear();
         if(_openMenu!=null)_openMenu.IsOpen=false;
         base.OnClosed(e);
     }

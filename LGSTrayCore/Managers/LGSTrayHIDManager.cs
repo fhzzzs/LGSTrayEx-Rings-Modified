@@ -171,8 +171,9 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         {
             if (!proc.HasExited)
             {
-                proc.Kill();
-                wasKilled = true;
+                try{proc.Kill(entireProcessTree:true);wasKilled=true;}
+                catch(InvalidOperationException) when(proc.HasExited){}
+                catch(Exception ex){DiagnosticLogger.LogWarning("HID process cleanup: "+ex.Message);}
                 using(var killed=new CancellationTokenSource(TimeSpan.FromSeconds(1)))
                     try{await proc.WaitForExitAsync(killed.Token);}catch(OperationCanceledException){DiagnosticLogger.LogWarning("HID daemon exit still pending");}
 

@@ -29,7 +29,7 @@ internal static class RingsUpdateService
         get{
             var s=Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion??"";
             int pos=s.IndexOf("-rings.",StringComparison.Ordinal);
-            return pos>=0&&Version.TryParse(s[(pos+7)..].Split('+')[0],out var v)?v:new Version(12,0,0);
+            return pos>=0&&Version.TryParse(s[(pos+7)..].Split('+')[0],out var v)?v:new Version(15,0,0);
         }
     }
     internal static bool TryTag(string? tag,out Version version){

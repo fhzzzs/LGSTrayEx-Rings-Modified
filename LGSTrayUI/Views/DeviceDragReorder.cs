@@ -19,6 +19,7 @@ internal sealed class DeviceDragReorder
     private readonly Action<string[]> commit;
     private readonly DispatcherTimer scrollTimer=new(){Interval=TimeSpan.FromMilliseconds(30)};
     private FrameworkElement? dragged;
+    private readonly Dictionary<FrameworkElement,int> categories=new();
     private UIElement[] original=[];
     private Point down;
     private double grabY;
@@ -33,9 +34,9 @@ internal sealed class DeviceDragReorder
         scrollTimer.Tick+=(_,_)=>{if(!moving)return;var scroll=AncestorScroll();if(scroll==null)return;var p=Mouse.GetPosition(scroll);double delta=p.Y<32?-12:p.Y>scroll.ViewportHeight-32?12:0;if(delta==0)return;double old=scroll.VerticalOffset;scroll.ScrollToVerticalOffset(Math.Clamp(old+delta,0,scroll.ScrollableHeight));scroll.UpdateLayout();Move(Mouse.GetPosition(list));};
     }
     private ScrollViewer? AncestorScroll(){for(DependencyObject? p=list;p!=null;p=VisualTreeHelper.GetParent(p))if(p is ScrollViewer s)return s;return null;}
-    internal void Attach(FrameworkElement card,FrameworkElement grip,string key)
+    internal void Attach(FrameworkElement card,FrameworkElement grip,string key,int category=0)
     {
-        card.Tag=key;card.RenderTransform=new TranslateTransform();
+        categories[card]=category;card.Tag=key;card.RenderTransform=new TranslateTransform();
         grip.PreviewMouseLeftButtonDown+=(_,e)=>{
             if(dragged!=null)return;list.UpdateLayout();down=e.GetPosition(list);grabY=down.Y-Top(card)-Offset(card);
             original=list.Children.Cast<UIElement>().ToArray();dragged=card;moving=false;
@@ -66,6 +67,8 @@ internal sealed class DeviceDragReorder
         if(!moving){if(Math.Abs(point.Y-down.Y)<SystemParameters.MinimumVerticalDragDistance&&Math.Abs(point.X-down.X)<SystemParameters.MinimumHorizontalDragDistance)return;moving=true;Panel.SetZIndex(card,100);card.Opacity=.92;scrollTimer.Start();}
         double desired=point.Y-grabY;var cards=list.Children.Cast<FrameworkElement>().ToArray();int index=Array.IndexOf(cards,card);if(index<0)return;
         int target=TargetIndex(index,desired+card.ActualHeight/2,cards.Select(x=>Top(x)+x.ActualHeight/2).ToArray());
+        int category=categories[card];int first=Array.FindIndex(cards,x=>categories[x]==category),last=Array.FindLastIndex(cards,x=>categories[x]==category);
+        target=Math.Clamp(target,first,last);
         if(target!=index){var positions=cards.ToDictionary(x=>x,x=>Top(x)+Offset(x));list.Children.RemoveAt(index);list.Children.Insert(target,card);list.UpdateLayout();foreach(var sibling in cards.Where(x=>x!=card))OffsetTo(sibling,positions[sibling]-Top(sibling),true);}
         OffsetTo(card,desired-Top(card),false);
     }

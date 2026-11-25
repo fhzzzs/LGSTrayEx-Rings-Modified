@@ -16,6 +16,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
     private readonly Dispatcher dispatcher;
     private readonly ProviderScheduler scheduler;
     private bool disposed,eventsSubscribed;
+    private int gamepadRescanQueued;
     internal event Action? Changed;
     internal IEnumerable<TaskbarBattery> Readings=>scheduler.Readings;
     private static Task<IReadOnlyList<TaskbarBattery>> Worker(Func<IEnumerable<TaskbarBattery>> read,CancellationToken token)
@@ -34,8 +35,8 @@ internal sealed class DeviceScanCoordinator:IDisposable
     }
     private void GamepadChanged(object? sender,Gamepad gamepad)
     {
-        if(dispatcher.HasShutdownStarted)return;
-        dispatcher.BeginInvoke(new Action(()=>{if(disposed)return;scheduler.Rescan("gip");scheduler.Rescan("xinput");}));
+        if(dispatcher.HasShutdownStarted||Interlocked.Exchange(ref gamepadRescanQueued,1)!=0)return;
+        dispatcher.BeginInvoke(new Action(()=>{Interlocked.Exchange(ref gamepadRescanQueued,0);if(disposed)return;scheduler.Rescan("gip");scheduler.Rescan("xinput");}));
     }
     internal void RequestRescan(){if(!disposed)scheduler.Rescan();}
     internal void Poll(DateTimeOffset now){if(!disposed)scheduler.Poll();}

@@ -29,7 +29,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
     // Position the WPF strip in verified free space adjacent to the notification area.
     internal static bool TryReadCustom(out TaskbarPlacement placement,double logicalWidth)
     {
-        placement=default; if(logicalWidth<=0){return false;}
+        placement=default; if(!double.IsFinite(logicalWidth)||logicalWidth<=0){return false;}
         var c=RingConfig.Current;
         var bar=FindWindow("Shell_TrayWnd",null); if(bar==0||!IsWindowVisible(bar)||!GetWindowRect(bar,out var bounds)){return false;}
         var tray=FindWindowEx(bar,0,"TrayNotifyWnd",null); if(tray==0||!GetWindowRect(tray,out var notify)){return false;}
@@ -41,7 +41,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         int height=Math.Min((int)Math.Round(Math.Clamp(c.Size,24,52)*scale),h), width=(int)Math.Ceiling(logicalWidth*scale);
         int offset=(int)Math.Round(Math.Clamp(c.X,-100,100)*scale), y=top+(h-height)/2+(int)Math.Round(Math.Clamp(c.Y,-20,20)*scale);
         if(y<top||y+height>bottom){return false;}
-        int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale), end=Math.Min(notify.Left,bounds.Right);
+        int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale), end=Math.Min(notify.Left,Math.Min(bounds.Right,info.Monitor.Right));
         if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls))return false;
         var occupied=controls.Where(r=>r.Top<y+height&&r.Bottom>y&&r.Left<end&&r.Right>bounds.Left)
             .Select(r=>((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right))).ToArray();
@@ -62,7 +62,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
                                 out TaskbarPlacement placement, int count = 2)
     {
         placement = default;
-        if (scale <= 0 || tray.Right <= tray.Left || tray.Bottom <= tray.Top) return false;
+        if (!double.IsFinite(scale) || scale <= 0 || tray.Right <= tray.Left || tray.Bottom <= tray.Top) return false;
         int top = Math.Max(bar.Top, screen.Top);
         int bottom = Math.Min(bar.Bottom, screen.Bottom);
         int thickness = bottom - top;
