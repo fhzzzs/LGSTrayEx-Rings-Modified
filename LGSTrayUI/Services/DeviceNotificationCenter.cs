@@ -24,6 +24,7 @@ internal sealed class DeviceNotificationCenter
                 change.Online?"#356A95":"#9A520C",TimeSpan.FromSeconds(c.NotificationSeconds),deviceKey:d.Key);
         }
         foreach(var key in last.Where(p=>now-p.Value.at>TimeSpan.FromHours(1)).Select(p=>p.Key).ToArray())last.Remove(key);
-        alerts.Check(snapshot.Rows,!allowed);
+        var deferred=last.Where(p=>p.Value.online&&now-p.Value.at<TimeSpan.FromSeconds(c.NotificationSeconds)&&c.ConnectionAlerts).Select(p=>p.Key).ToHashSet(StringComparer.Ordinal);
+        alerts.Check(snapshot.Rows,!allowed,deferred);
     }
 }

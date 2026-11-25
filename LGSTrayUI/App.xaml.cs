@@ -41,6 +41,8 @@ public partial class App : Application
     private IEnumerable<IDeviceManager>? _deviceManagers; // Cached device managers for wake handler
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
     private TaskbarBatteryWindow? _taskbarBatteries;
+    private DeviceScanCoordinator? _scanner;
+    private int _resumeInFlight;
     private IPublisher<SystemSuspendingMessage>? _suspendPublisher;
     private IPublisher<SystemResumingMessage>? _resumePublisher;
 
@@ -182,7 +184,8 @@ public partial class App : Application
         _powerWindow.Hide(); // Then hide immediately
 
         var trayViewModel=host.Services.GetRequiredService<NotifyIconViewModel>();
-        _taskbarBatteries = new TaskbarBatteryWindow(trayViewModel);
+        _scanner=new DeviceScanCoordinator(Dispatcher);
+        _taskbarBatteries = new TaskbarBatteryWindow(trayViewModel,_scanner);
         _taskbarBatteries.Closed+=(_,_)=>_taskbarBatteries=null;
         host.Services.GetRequiredService<MainTaskbarIconWrapper>().Initialize(trayViewModel,()=>_taskbarBatteries?.ShowSettings(),()=>_taskbarBatteries?.Rescan(),()=>_taskbarBatteries?.ShowDevices(),()=>_taskbarBatteries?.OnlineCount??0);
 
@@ -218,11 +221,14 @@ public partial class App : Application
     /// </summary>
     public async Task HandleSystemResumeAsync()
     {
+        if(_exitRequested||Interlocked.Exchange(ref _resumeInFlight,1)!=0)return;
         try
         {
             // Wait 2 seconds for USB devices to fully wake and stabilize
             // This delay allows HID devices to enumerate and become responsive
-            await Task.Delay(2000);
+            await Task.Delay(2000,_startupCancellation.Token);
+            if(_exitRequested)return;
+            await Dispatcher.InvokeAsync(()=>_taskbarBatteries?.PrepareResume());
 
             // Get device managers from DI container
             if (_deviceManagers == null)
@@ -240,14 +246,15 @@ public partial class App : Application
             DiagnosticLogger.Log("Triggering rediscovery on all device managers");
             foreach (var manager in _deviceManagers)
             {
-                _ = manager.RediscoverDevices();
-                DiagnosticLogger.Log($"Rediscovery triggered for {manager.GetType().Name}");
+                try{await manager.RediscoverDevices().WaitAsync(TimeSpan.FromSeconds(8),_startupCancellation.Token);}
+                catch(Exception ex){DiagnosticLogger.LogWarning($"Resume rediscovery {manager.GetType().Name}: {ex.Message}");}
+                if(_exitRequested)return;
             }
         }
         catch (Exception ex)
         {
             DiagnosticLogger.LogError($"Error during system resume handling: {ex.Message}");
-        }
+        }finally{Interlocked.Exchange(ref _resumeInFlight,0);}
     }
 
     internal async void RequestExit()
@@ -264,13 +271,13 @@ public partial class App : Application
         _taskbarBatteries?.Hide();
         CloseUi(host);
         DiagnosticLogger.Log($"Exit UI closed in {watch.ElapsedMilliseconds} ms");
-        _startupCancellation.Cancel();
+        try{_startupCancellation.Cancel();}catch(Exception ex){DiagnosticLogger.LogWarning("Startup cancellation: "+ex.Message);}
         if(host!=null){
             try{
                 // Dispatcher remains responsive while hosted services finish. The HID child
                 // also monitors its parent PID, so it exits if this process terminates.
                 await Task.Run(async ()=>{
-                    using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(1));
                     try{
                         if(_hostStart!=null)try{await _hostStart.WaitAsync(stop.Token);}catch(OperationCanceledException){}catch(Exception ex){DiagnosticLogger.LogWarning("Host start during exit: "+ex.Message);}
                         await host.StopAsync(stop.Token);
@@ -288,7 +295,9 @@ public partial class App : Application
     private void CloseUi(IHost? host)
     {
         Microsoft.Win32.SystemEvents.PowerModeChanged -= AppExtensions_PowerModeChanged;
-        _taskbarBatteries?.Close();_taskbarBatteries=null;
+        try{_taskbarBatteries?.Close();}catch(Exception ex){DiagnosticLogger.LogWarning("Ring window cleanup: "+ex.Message);}
+        _taskbarBatteries=null;
+        try{_scanner?.Dispose();}catch(Exception ex){DiagnosticLogger.LogWarning("Scanner cleanup: "+ex.Message);}_scanner=null;
         PrimaryNotificationPopup.CloseAll();
         // The WPF tray icon must be disposed on its dispatcher, not a worker.
         try{host?.Services.GetService<MainTaskbarIconWrapper>()?.Dispose();}catch(Exception ex){DiagnosticLogger.LogWarning("Tray cleanup: "+ex.Message);}

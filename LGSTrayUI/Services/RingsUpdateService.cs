@@ -24,12 +24,12 @@ internal static class RingsUpdateService
     private static readonly string Versions=Path.Combine(AppDataPaths.LocalAppDataDir,"versions");
     private static readonly string Previous=Path.Combine(AppDataPaths.LocalAppDataDir,"rings-previous-version.json");
     private static readonly HttpClient Http=new(){Timeout=Timeout.InfiniteTimeSpan};
-    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("LGSTrayEx-Rings-Update/10");}
+    static RingsUpdateService(){Http.DefaultRequestHeaders.UserAgent.ParseAdd("LGSTrayEx-Rings-Update/11");}
     internal static Version Current{
         get{
             var s=Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion??"";
             int pos=s.IndexOf("-rings.",StringComparison.Ordinal);
-            return pos>=0&&Version.TryParse(s[(pos+7)..].Split('+')[0],out var v)?v:new Version(10,0,0);
+            return pos>=0&&Version.TryParse(s[(pos+7)..].Split('+')[0],out var v)?v:new Version(11,0,0);
         }
     }
     internal static bool TryTag(string? tag,out Version version){

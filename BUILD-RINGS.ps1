@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='10.0.0')
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='11.0.0')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }

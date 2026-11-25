@@ -74,6 +74,9 @@ internal sealed class ProviderScheduler:IDisposable
         }catch(OperationCanceledException){if(!disposed&&generation==s.Generation)s.Failures++;}
         catch(Exception ex){if(!disposed&&generation==s.Generation){s.Failures++;DiagnosticLogger.LogWarning(s.Provider.Id+" scan: "+ex.Message);}}
         finally{
+            if(!disposed&&generation==s.Generation&&s.Failures>=2&&s.Rows.Any(r=>r.IsConnected)){
+                s.Rows=s.Rows.Select(r=>r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}).ToArray();changed();
+            }
             s.Flight=null;
             if(!disposed)s.Next=generation!=s.Generation?DateTimeOffset.MinValue:DateTimeOffset.UtcNow+
                 TimeSpan.FromSeconds(Math.Min(120,s.Provider.Interval(RingConfig.Current).TotalSeconds*Math.Pow(2,Math.Min(4,s.Failures))));

@@ -12,6 +12,7 @@ internal sealed class RingPreferences
     public int SchemaVersion {get;set;}=3;
     public Dictionary<string,string> PhysicalSourceIds {get;set;}=new();
     public Dictionary<string,string> PhysicalEvidenceIds {get;set;}=new();
+    public Dictionary<string,string> PhysicalSourceEvidence {get;set;}=new();
     public string Normal {get;set;}="#34C759"; public string Low {get;set;}="#FFCC00"; public string Critical {get;set;}="#FF3B30";
     public string Offline {get;set;}="#8E8E93"; public string Icon {get;set;}="#F5F5F5"; public string Text {get;set;}="#F5F5F5";
     public bool AutoContrast {get;set;}=true; public string Track {get;set;}="#FFFFFF"; public string Charging {get;set;}="#0A84FF"; public string Background {get;set;}="#0020242C";

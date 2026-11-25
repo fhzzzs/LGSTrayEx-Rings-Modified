@@ -21,3 +21,19 @@ No arbitrary same-name merge: source count is not evidence of physical identity.
 ## Release gate
 
 Require passing Windows CI and an interactive Windows 11 check of right-side placement, DPI, crowded taskbar, ring animation, reconnect/rescan, exit latency and update/rollback. Settings, inventory and themes retain their existing transaction boundaries.
+
+## Rings 11.0 — first nine workstreams
+
+| Item | Implementation | Remaining verification |
+|---|---|---|
+| 1 | Persistent logical GUID registry and preference migration; source/serial evidence conflict checks | Hardware without persistent identity (notably XInput slots) cannot be identified with certainty; manual association supported |
+| 2 | Normalized observation with connection, charge, quality, per-provider TTL; expired reading not shown as live | Verify real polling intervals |
+| 3 | Typed connection and charging state; legacy display labels normalized at input | Real reconnect/charging transitions |
+| 4 | GIP and XInput independently scheduled, no global exclusion; exact evidence/manual links only | Mixed controllers and physical identity validation |
+| 5 | Application-owned scheduler, separate provider intervals, cancellation, bounded backoff; existing Logitech hosted push providers retained | Native calls may only honor cancellation after returning |
+| 6 | Shell WinEvent hooks, display-change invalidation, adaptive geometry polling | Explorer restart and DPI behavior |
+| 7 | Preference fingerprints separate device regroup, provider and layout changes from appearance | Verify live settings responsiveness |
+| 8 | Application-owned scanner, deduplicated resume, cancellation and bounded asynchronous shutdown | Measure real exit time |
+| 9 | Notification event center, logical-ID deduplication and connection/low-alert priority | Verify actual hardware alerts |
+
+Source phases are committed without moving the main branch until all nine are staged. The final branch update triggers Windows tests and a single portable build. No native left-layout code is reintroduced. Items 10–16 are not part of this change.

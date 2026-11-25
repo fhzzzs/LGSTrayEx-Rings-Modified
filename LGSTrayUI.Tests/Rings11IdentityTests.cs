@@ -30,4 +30,15 @@ public class Rings11IdentityTests
         var group=Assert.Single(a.Advance(c,T).Groups);DeviceIdentityManager.Split(c,group);
         a.Regroup(c);Assert.Equal(2,a.Advance(c,T).Rows.Select(x=>x.Key).Distinct().Count());
     }
+    [Fact]public void SerialConflictDoesNotReuseOldLogicalId(){
+        var c=new RingPreferences();var a=new PhysicalDeviceCenter(T);
+        a.RefreshInventory([Row("gip:a","serial:1")],c);var id=Assert.Single(a.Advance(c,T).Rows).Key;
+        a.RefreshInventory([Row("gip:a","serial:2")],c);Assert.NotEqual(id,Assert.Single(a.Advance(c,T).Rows).Key);
+    }
+    [Fact]public void LegacyLabelNormalizesOnlyAtAssignment(){
+        var a=Row("gip:a");
+        Assert.Equal(ConnectionState.Connected,a.Connection);
+        Assert.Equal(ConnectionState.Disconnected,(a with{Status="离线"}).Connection);
+        Assert.Equal(ConnectionState.Reconnecting,a.WithConnection(ConnectionState.Reconnecting).Connection);
+    }
 }
