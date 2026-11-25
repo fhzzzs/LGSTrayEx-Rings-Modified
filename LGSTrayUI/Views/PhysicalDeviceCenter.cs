@@ -16,7 +16,7 @@ internal sealed class PhysicalDeviceCenter
     private DeviceGroup[] rawGroups=[];
     internal PhysicalDeviceCenter(DateTimeOffset now){connections=new(now);}
     internal void Suppress(DateTimeOffset now,TimeSpan duration)=>connections.Suppress(now,duration);
-    internal void Regroup(RingPreferences c){rawGroups=DeviceIdentityManager.Group(Inventory.Values,c);}
+    internal void Regroup(RingPreferences c){rawGroups=PhysicalIdentityRegistry.Assign(DeviceIdentityManager.Group(Inventory.Values,c),c);}
     internal bool RefreshInventory(IEnumerable<TaskbarBattery> readings,RingPreferences c)
     {
         var current=readings.GroupBy(d=>d.Key,StringComparer.Ordinal)
@@ -39,8 +39,11 @@ internal sealed class PhysicalDeviceCenter
         }
         foreach(var key in Inventory.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
             Inventory[key]=Inventory[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+        var previousIds=new Dictionary<string,string>(c.PhysicalSourceIds);var previousEvidence=new Dictionary<string,string>(c.PhysicalEvidenceIds);
         var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);int previousModelRoots=c.ModelGroupRoots.Count;
         Regroup(c);
+        if(previousIds.Count!=c.PhysicalSourceIds.Count||previousIds.Any(p=>c.PhysicalSourceIds.GetValueOrDefault(p.Key)!=p.Value)||
+           previousEvidence.Count!=c.PhysicalEvidenceIds.Count||previousEvidence.Any(p=>c.PhysicalEvidenceIds.GetValueOrDefault(p.Key)!=p.Value))changed=true;
         if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)changed=true;
         foreach(var group in rawGroups){
             var key=group.Reading.Key;
@@ -55,8 +58,7 @@ internal sealed class PhysicalDeviceCenter
     {
         var selected=selector.Select(rawGroups,c,now);
         var snapshot=connections.ObserveSnapshot(selected,now);
-        bool gipActive=Inventory.Values.Any(d=>!d.Offline&&d.Key.StartsWith("gip:",StringComparison.Ordinal));
-        var rows=snapshot.Groups.Where(g=>!g.Ignored&&!(c.AutoDeduplicate&&gipActive&&g.Sources.All(d=>d.Offline&&d.Key.StartsWith("xinput:",StringComparison.Ordinal))))
+        var rows=snapshot.Groups.Where(g=>!g.Ignored)
             .Select(g=>g.Reading).Select(d=>c.Names.TryGetValue(d.Key,out var name)&&!string.IsNullOrWhiteSpace(name)?d with{Name=name}:d).ToArray();
         return new(snapshot.Groups,rows,snapshot.Changes.Where(x=>!snapshot.Groups.Any(g=>g.Ignored&&g.Reading.Key==x.Device.Key)).ToArray(),snapshot.Suppressed);
     }

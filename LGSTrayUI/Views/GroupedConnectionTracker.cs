@@ -32,7 +32,7 @@ internal sealed class GroupedConnectionTracker
         if(until>suppressedUntil)suppressedUntil=until;
     }
     internal bool IsSuppressed(DateTimeOffset now)=>now<suppressedUntil;
-    private static bool Online(DeviceGroup g)=>g.Sources.Any(d=>!d.Offline&&d.Status!="等待连接");
+    private static bool Online(DeviceGroup g)=>g.Sources.Any(d=>d.IsConnected);
     internal ConnectionChange[] Observe(IEnumerable<DeviceGroup> groups,DateTimeOffset now)=>ObserveSnapshot(groups,now).Changes;
     internal ConnectionSnapshot ObserveSnapshot(IEnumerable<DeviceGroup> groups,DateTimeOffset now)
     {
@@ -69,9 +69,9 @@ internal sealed class GroupedConnectionTracker
             }
             TaskbarBattery reading=g.Reading;
             if(state.Online&&!online&&state.Last!=null)
-                reading=state.Last with{Key=key,Name=g.Reading.Name,Status="重新连接",Charging=false};
+                reading=state.Last.WithConnection(ConnectionState.Reconnecting) with{Key=key,Name=g.Reading.Name,Charging=false};
             else if(!state.Online&&online)
-                reading=g.Reading with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+                reading=g.Reading.WithConnection(ConnectionState.Disconnected) with{Level=null,Charging=false,ShortLabel=null};
             if(state.Online&&online)state.Last=g.Reading;
             state.Sources=sources;next[key]=state;
             effective.Add(g with{Reading=reading});

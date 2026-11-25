@@ -71,7 +71,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
         try{
             var rows=await Task.Run(()=>{
                 var result=gip?GipBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
-                return result.Length>0?result:xinput?XInputBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
+                return result.Concat(xinput?XInputBatteryReader.Read():Array.Empty<TaskbarBattery>()).ToArray();
             },token);
             if(!disposed&&generation==controllerRequest&&!controllers.SequenceEqual(rows)){controllers=rows;changed();}
         }catch(OperationCanceledException){}catch(Exception ex){DiagnosticLogger.LogWarning("Controller discovery: "+ex.Message);}

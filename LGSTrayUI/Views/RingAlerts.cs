@@ -15,8 +15,8 @@ internal sealed class RingAlerts
         bool allowed=!suppressed&&RingNotificationPolicy.CanNotify(c);
         if(!c.Alerts)history.Clear();
         foreach(var d in rows){
-            if(d.Offline||d.Status=="重新连接"||d.Level is not int n)continue;
-            bool isFull=n>=100&&(d.Charging||d.Status=="已充满");
+            if(!d.IsConnected||d.Stale||d.Level is not int n)continue;
+            bool isFull=n>=100&&(d.ChargeState is BatteryChargeState.Charging or BatteryChargeState.Full);
             if(full.TryGetValue(d.Key,out var wasFull)&&!wasFull&&isFull&&c.FullChargeAlerts&&allowed)
                 PrimaryNotificationPopup.Show(d.Name,"充电完成","#237344",TimeSpan.FromSeconds(c.NotificationSeconds),deviceKey:d.Key);
             full[d.Key]=isFull;

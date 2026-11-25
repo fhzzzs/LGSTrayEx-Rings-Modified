@@ -124,6 +124,7 @@ internal static class DeviceIdentityManager
     internal static void Merge(RingPreferences c,DeviceGroup primary,DeviceGroup secondary){
         var target=primary.Reading.Key;if(target==secondary.Reading.Key||primary.Reading.Type!=secondary.Reading.Type)return;
         Inherit(c,secondary.Reading.Key,target);
+        if(PhysicalIdentityRegistry.IsId(target))foreach(var s in primary.Sources.Concat(secondary.Sources))c.PhysicalSourceIds[s.Key]=target;
         c.DeviceAliases.Remove(target);c.AutomaticAliases.Remove(target);
         foreach(var d in primary.Sources.Concat(secondary.Sources)){c.SeparateDeviceSources.Remove(d.Key);c.AutomaticAliases.Remove(d.Key);if(d.Key!=target)c.DeviceAliases[d.Key]=target;}
         if(secondary.Reading.Key!=target)c.DeviceAliases[secondary.Reading.Key]=target;

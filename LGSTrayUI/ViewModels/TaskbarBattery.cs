@@ -6,12 +6,30 @@ using System.Linq;
 
 namespace LGSTrayUI;
 
+internal enum ConnectionState { Disconnected, Connecting, Connected, Reconnecting }
+internal enum BatteryChargeState { Unknown, Discharging, Charging, Full }
+internal enum ReadingQuality { Unknown, Band, Exact, Stale }
+
 internal sealed record TaskbarBattery(DeviceType Type, string Name, int? Level, string Status,
                                       bool Charging, DateTimeOffset Updated, string Key = "", string? ShortLabel = null, string? PhysicalId = null)
 {
     public string Category => Type switch { DeviceType.Mouse => "鼠标", DeviceType.Headset => "耳机", DeviceType.Keyboard => "键盘", DeviceType.Gamepad => "手柄", _ => "设备" };
-    public bool Offline => Status == "离线";
-    public string Percent => Offline ? "Off" : ShortLabel ?? (Level is int value ? $"{value}%" : "—");
+    // Legacy provider text is normalized at the boundary; downstream decisions
+    // use typed state. The display string is retained for old previews/imports.
+    public ConnectionState Connection => Status switch {
+        "离线"=>ConnectionState.Disconnected,"等待连接"=>ConnectionState.Connecting,
+        "重新连接"=>ConnectionState.Reconnecting,_=>ConnectionState.Connected};
+    public BatteryChargeState ChargeState=>Offline?BatteryChargeState.Unknown:Status=="已充满"?BatteryChargeState.Full:
+        Charging?BatteryChargeState.Charging:Level.HasValue?BatteryChargeState.Discharging:BatteryChargeState.Unknown;
+    public bool Offline => Connection==ConnectionState.Disconnected;
+    public bool IsConnected=>Connection==ConnectionState.Connected;
+    public TaskbarBattery WithConnection(ConnectionState state)=>this with{Status=state switch{
+        ConnectionState.Disconnected=>"离线",ConnectionState.Connecting=>"等待连接",ConnectionState.Reconnecting=>"重新连接",_=>"已连接"}};
+    public bool Stale {get;init;}
+    public int? LastKnownLevel {get;init;}
+    public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?ReadingQuality.Exact:
+        ShortLabel is "Empty" or "Low" or "Med" or "Full"?ReadingQuality.Band:ReadingQuality.Unknown;
+    public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value ? $"{value}%" : "—");
     public int BarValue => Level ?? 0;
     public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";
     public string UpdatedLabel => Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";

@@ -10,7 +10,7 @@ namespace LGSTrayUI;
 // notification and layout files. Existing flat JSON remains importable.
 internal static class RingSettingsStore
 {
-    internal const int Version=2;
+    internal const int Version=3;
     private static readonly JsonSerializerOptions Json=new(){WriteIndented=true};
     internal static RingPreferences Parse(string json)
     {
@@ -20,6 +20,7 @@ internal static class RingSettingsStore
             throw new FormatException("不支持的配置版本。");
         var c=JsonSerializer.Deserialize<RingPreferences>(json)??throw new FormatException("配置为空。");
         // Null containers from imports must never reach the identity or UI engines.
+        c.PhysicalSourceIds??=new();c.PhysicalEvidenceIds??=new();
         c.AutomaticAliases??=new();c.DeviceAliases??=new();c.PreferredSources??=new();
         c.ModelGroupRoots??=[];c.IgnoredDevices??=[];c.SeparateDeviceSources??=[];
         c.Order??=[];c.Hidden??=[];c.Names??=new();c.DeviceRules??=new();c.DeviceColors??=new();

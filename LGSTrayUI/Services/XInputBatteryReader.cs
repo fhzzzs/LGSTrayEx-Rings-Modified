@@ -41,7 +41,7 @@ internal static class XInputBatteryReader
                         status = "已连接（XInput 电量档位）";
                     }
                 }
-                result.Add(new(DeviceType.Gamepad, $"XInput Controller {i + 1}", null, status, false, DateTimeOffset.MinValue, $"xinput:{i}", label));
+                result.Add(new(DeviceType.Gamepad, $"XInput Controller {i + 1}", null, status, false, DateTimeOffset.UtcNow, $"xinput:{i}", label));
             }
         }
         catch (DllNotFoundException) { }

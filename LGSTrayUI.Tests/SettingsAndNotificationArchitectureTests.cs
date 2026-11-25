@@ -7,7 +7,7 @@ public class SettingsAndNotificationArchitectureTests
 {
     [Fact]public void LegacySettingsMigrateWithoutDiscardingAliases(){
         var c=RingSettingsStore.Parse("{\"DeviceAliases\":{\"a\":\"b\"},\"Gap\":7,\"Names\":null}");
-        Assert.Equal(2,c.SchemaVersion);Assert.Equal("b",c.DeviceAliases["a"]);Assert.Equal(7d,c.Gap);Assert.Empty(c.Names);
+        Assert.Equal(3,c.SchemaVersion);Assert.Equal("b",c.DeviceAliases["a"]);Assert.Equal(7d,c.Gap);Assert.Empty(c.Names);
     }
     [Fact]public void NewerUnknownSchemaIsRejected()=>Assert.Throws<FormatException>(()=>RingSettingsStore.Parse("{\"SchemaVersion\":999}"));
     [Fact]public void AtomicSettingsSaveRetainsPreviousValidVersion(){
