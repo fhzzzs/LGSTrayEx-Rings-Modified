@@ -65,7 +65,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
         // Prefer the exact Start-adjacent slot if it is already free. Never claim a reserved slot that Explorer did not allocate.
         var reserve=TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X);
-        if(c.Left && startButtonRight is int anchor && startButtonLeft is int leading &&
+        if(c.Left && (!c.RequireNativeLeft||NativeTaskbarSlot.Instance.Acknowledged) && startButtonRight is int anchor && startButtonLeft is int leading &&
            leading<=bounds.Left+(int)Math.Ceiling(24*scale) &&
            !nonStart.Any(b=>b.right>leading&&b.left<anchor) && reserve.total>0 &&
            TryReserved(anchor,end,width,(int)Math.Round(reserve.before*scale),(int)Math.Round(reserve.after*scale),occupied,out int nativeX)){
@@ -77,6 +77,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         // reservation is unavailable. Never claim the Start button has been moved.
         if(c.Left){
             NativeTaskbarSlot.Instance.Verify(false);
+            if(c.RequireNativeLeft){NativeTaskbarSlot.Instance.ReportPlacement("实际位置：等待验证的原生占位；未启用悬浮回退");return false;}
             if(startButtonLeft is int sl && startButtonRight is int sr &&
                TryLeftFallback(Math.Max(bounds.Left,info.Monitor.Left),end,sl,sr,(int)Math.Ceiling(24*scale),width,leftGap,rightGap,offset,occupied,out int lx)){
                 NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左侧安全空位（非原生占位）");

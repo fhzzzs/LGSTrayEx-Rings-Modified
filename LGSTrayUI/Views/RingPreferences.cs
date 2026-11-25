@@ -22,6 +22,7 @@ internal sealed class RingPreferences
     public double TextX {get;set;}=0; public double TextY {get;set;}=50; public double FontSize {get;set;}=14.5; public string Font {get;set;}="Segoe UI";
     public bool Bold {get;set;}=true; public bool Rounded {get;set;}=true; public double Size {get;set;}=38; public double Gap {get;set;}=4;
     public double LeftGap {get;set;}=16; public double RightGap {get;set;}=16; public double X {get;set;}=0; public double Y {get;set;}=0;
+    public bool RequireNativeLeft {get;set;}=true;
     public bool Left {get;set;}=false; public bool Divider {get;set;}=false; public bool Animate {get;set;}=true; public string Motion {get;set;}="Spring";
     public double Speed {get;set;}=1; public double GrayMs {get;set;}=300; public double WaitMs {get;set;}=3000; public double OutMs {get;set;}=700; public double InMs {get;set;}=500;
     public double BatteryMs {get;set;}=500; public double ColorMs {get;set;}=500; public double SpringMs {get;set;}=500; public double StaggerMs {get;set;}=75; public double Bounce {get;set;}=6;

@@ -33,7 +33,9 @@ public partial class TaskbarBatteryWindow : Window
     private readonly string _knownPath = Path.Combine(AppDataPaths.LocalAppDataDir, "taskbar-devices.json");
     private IReadOnlyList<TaskbarBattery> _bluetooth = Array.Empty<TaskbarBattery>();
     private IReadOnlyList<TaskbarBattery> _controllers = Array.Empty<TaskbarBattery>();
-    private bool _scanningBluetooth;
+    private bool _scanningBluetooth,_scanningControllers;
+    private bool _placementReady;
+    private bool _placementQueued;
     private IReadOnlyList<TaskbarBattery> _asus=Array.Empty<TaskbarBattery>();
     private bool _scanningAsus;
     private DateTimeOffset _nextAsus;
@@ -50,7 +52,7 @@ public partial class TaskbarBatteryWindow : Window
     {
         _tray = tray;
         InitializeComponent();
-        _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement);
+        _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement){PlacementReady=()=>_placementReady};
         RingConfig.Changed += SettingsChanged;
         _handle = new WindowInteropHelper(this).EnsureHandle();
         TaskbarPlacement.MakeToolWindow(_handle);
@@ -135,7 +137,7 @@ public partial class TaskbarBatteryWindow : Window
         ApplySnapshot(snapshot,true);
     }
     private void SettingsChanged(){ _deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
-    private void UpdatePlacement(){ if (_closed) return; Dispatcher.BeginInvoke(new Action(()=>Reposition(null,EventArgs.Empty))); }
+    private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
     internal void ShowDevices(){ShowSettings();_settings?.OpenDevices();}
@@ -181,8 +183,8 @@ public partial class TaskbarBatteryWindow : Window
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(25));
-            _bluetooth = await BluetoothBatteryReader.ReadAsync(timeout.Token);
-            if (!_closed) QueueRefresh();
+            var readings = await BluetoothBatteryReader.ReadAsync(timeout.Token);
+            if (!_closed&&RingConfig.Current.UseBle){_bluetooth=readings;QueueRefresh();}
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { DiagnosticLogger.LogWarning($"BLE discovery: {ex.Message}"); }
@@ -194,19 +196,27 @@ public partial class TaskbarBatteryWindow : Window
         catch(Exception ex){DiagnosticLogger.LogWarning("ASUS battery: "+ex.Message);if(!_closed){_asus=Array.Empty<TaskbarBattery>();QueueRefresh();}}
         finally{_scanningAsus=false;_nextAsus=DateTimeOffset.UtcNow.AddSeconds(10);}
     }
+    private async Task ScanControllersAsync()
+    {
+        _scanningControllers=true;
+        var c=RingConfig.Current;bool gipEnabled=c.UseGip,xinputEnabled=c.UseXInput;
+        try{
+            var readings=await Task.Run(()=>{
+                var gip=gipEnabled?GipBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
+                return gip.Length>0?gip:xinputEnabled?XInputBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
+            },_stop.Token);
+            if(!_closed&&gipEnabled==RingConfig.Current.UseGip&&xinputEnabled==RingConfig.Current.UseXInput&&!_controllers.SequenceEqual(readings)){
+                _controllers=readings;QueueRefresh();
+            }
+        }catch(OperationCanceledException){}catch(Exception ex){DiagnosticLogger.LogWarning("Controller discovery: "+ex.Message);}
+        finally{_scanningControllers=false;_nextControllers=DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(RingConfig.Current.PollSeconds,.5,60));}
+    }
     private void PollExtraDevices()
     {
         var now = DateTimeOffset.UtcNow;
         // ROG OMNI is an automatic hardware provider, not a user preference.
         if(!_scanningAsus&&now>=_nextAsus)_=ScanAsusAsync();
-        if (now >= _nextControllers)
-        {
-            _nextControllers = now.AddSeconds(Math.Clamp(RingConfig.Current.PollSeconds,.5,60));
-            var c=RingConfig.Current; var gip=c.UseGip?GipBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
-            // Avoid double enumeration when WGI sees gamepads; XInput is fallback only.
-            var readings = gip.Length>0?gip:c.UseXInput?XInputBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
-            if (!_controllers.SequenceEqual(readings)) { _controllers = readings; QueueRefresh(); }
-        }
+        if(!_scanningControllers&&now>=_nextControllers)_=ScanControllersAsync();
         if (!RingConfig.Current.UseBle) { if (_bluetooth.Count>0) { _bluetooth=Array.Empty<TaskbarBattery>(); QueueRefresh(); } }
         else if (!_scanningBluetooth && now >= _nextBluetooth) _ = ScanBluetoothAsync();
     }
@@ -253,7 +263,7 @@ public partial class TaskbarBatteryWindow : Window
                 if(_openMenu!=null)_openMenu.IsOpen=false;
                 Hide();
             }
-            _position = null;
+            _position = null;_placementReady=false;
             return;
         }
         bool changed = _position != placement;
@@ -273,8 +283,11 @@ public partial class TaskbarBatteryWindow : Window
         }
         // Explorer can raise its own topmost window while the taskbar bounds stay the same.
         // Do not raise the rings over a context menu or detail panel.
-        if (_openMenu?.IsOpen != true)
+        if (_openMenu?.IsOpen != true){
             placement.Apply(_handle);
+            _placementReady=true;
+            _animator.ConfirmPlacement();
+        }
     }
 
     private Button CreateRingButton()

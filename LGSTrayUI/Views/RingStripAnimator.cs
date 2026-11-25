@@ -37,9 +37,10 @@ internal sealed class RingStripAnimator : IDisposable
         internal required TaskbarBattery Data;
         internal DateTimeOffset? OfflineAt;
         internal bool Leaving,Pending=true;
-        internal int Generation;
+        internal int Generation,FadeGeneration;
     }
     internal Func<double>? WaitOverride;
+    internal Func<bool>? PlacementReady;
     internal bool PreviewMode,StaticPreview,SeedImmediately;
     private readonly Rectangle divider=new(){IsHitTestVisible=false,Visibility=Visibility.Collapsed};
     private readonly Canvas canvas;
@@ -64,8 +65,9 @@ internal sealed class RingStripAnimator : IDisposable
         moveTimer=new DispatcherTimer(DispatcherPriority.Render){Interval=TimeSpan.FromMilliseconds(16)};
         moveTimer.Tick+=(_,_)=>moveFrame?.Invoke();
     }
-    private static void Fade(Button b,double to,double ms,Action? done=null,double delay=0)
+    private static void Fade(Entry entry,double to,double ms,Action? done=null,double delay=0)
     {
+        int token=++entry.FadeGeneration;var b=entry.Button;
         double from=b.Opacity;
         b.BeginAnimation(UIElement.OpacityProperty,null);
         b.Opacity=from;
@@ -73,7 +75,7 @@ internal sealed class RingStripAnimator : IDisposable
         var a=new DoubleAnimation(from,to,TimeSpan.FromMilliseconds(ms)){
             EasingFunction=new SineEase{EasingMode=EasingMode.EaseInOut},
             BeginTime=TimeSpan.FromMilliseconds(Math.Max(0,delay)),FillBehavior=FillBehavior.HoldEnd};
-        a.Completed+=(_,_)=>{b.Opacity=to;b.BeginAnimation(UIElement.OpacityProperty,null);done?.Invoke();};
+        a.Completed+=(_,_)=>{if(token!=entry.FadeGeneration)return;b.Opacity=to;b.BeginAnimation(UIElement.OpacityProperty,null);done?.Invoke();};
         b.BeginAnimation(UIElement.OpacityProperty,a);
     }
     private IEnumerable<Entry> Sorted()=>entries.Values.OrderBy(e=>RingConfig.Current.Order.IndexOf(e.Data.Key) is int i&&i>=0?i:int.MaxValue).ThenBy(e=>TaskbarBattery.Rank(e.Data.Type)).ThenBy(e=>e.Data.Key,StringComparer.Ordinal);
@@ -96,11 +98,11 @@ internal sealed class RingStripAnimator : IDisposable
                 if(d.Offline&&!was)e.OfflineAt=DateTimeOffset.UtcNow;
                 else if(!d.Offline&&(was||e.Leaving)){
                     e.Generation++;e.OfflineAt=null;e.Leaving=false;
-                    if(!e.Pending){e.Button.IsHitTestVisible=true;Fade(e.Button,1,c.Ms(c.InMs));}
+                    if(!e.Pending){e.Button.IsHitTestVisible=true;Fade(e,1,c.Ms(c.InMs));}
                 }
                 if(!PreviewMode&&!c.AutoHide&&e.Leaving){
                     e.Generation++;e.Leaving=false;
-                    if(!e.Pending){Fade(e.Button,1,c.Ms(c.InMs));e.Button.IsHitTestVisible=true;}
+                    if(!e.Pending){Fade(e,1,c.Ms(c.InMs));e.Button.IsHitTestVisible=true;}
                 }
             }
         }
@@ -123,7 +125,7 @@ internal sealed class RingStripAnimator : IDisposable
             if(e.Leaving||e.OfflineAt is not DateTimeOffset t||!e.Data.Offline||(DateTimeOffset.UtcNow-t).TotalMilliseconds<Math.Max(0,WaitOverride?.Invoke()??c.WaitMs))continue;
             e.Leaving=true;e.Button.IsHitTestVisible=false;int gen=++e.Generation;
             // Keep the old slot occupied throughout the fade; close the gap only after removal.
-            Fade(e.Button,0,e.Pending?0:c.Ms(c.OutMs),()=>{
+            Fade(e,0,e.Pending?0:c.Ms(c.OutMs),()=>{
                 if(disposed||gen!=e.Generation||!e.Data.Offline)return;
                 Remove(e.Data.Key);Reflow();
             });
@@ -132,7 +134,7 @@ internal sealed class RingStripAnimator : IDisposable
     }
     private void Remove(string k){
         if(!entries.Remove(k,out var e))return;
-        e.Generation++;e.Button.BeginAnimation(UIElement.OpacityProperty,null);canvas.Children.Remove(e.Button);
+        e.Generation++;e.FadeGeneration++;e.Button.BeginAnimation(UIElement.OpacityProperty,null);canvas.Children.Remove(e.Button);
     }
     private void Reflow()
     {
@@ -171,11 +173,7 @@ internal sealed class RingStripAnimator : IDisposable
             StopMove();
             foreach(var m in moves)m.e.Button.SetValue(prop,m.to);
             Width=target;canvas.Width=target;layout();
-            int index=0;
-            foreach(var e in es.Where(e=>e.Pending&&!e.Leaving)){
-                e.Pending=false;int gen=++e.Generation;
-                Fade(e.Button,1,SeedImmediately?0:c.Ms(c.InMs),()=>{if(e.Generation==gen)e.Button.IsHitTestVisible=true;},index++*c.Ms(c.StaggerMs));
-            }
+            ConfirmPlacement();
         }
         // Reordering or changing size/alignment may require crossing paths. Snap that
         // layout atomically instead of animating visible rings through one another.
@@ -188,6 +186,16 @@ internal sealed class RingStripAnimator : IDisposable
             if(t>=1)Finish();
         };
         moveClock.Restart();moveTimer.Start();
+    }
+    // Pending rings become visible only after the strip has a verified slot
+    // and all existing visible rings have completed their movement.
+    internal void ConfirmPlacement(){
+        if(disposed||moveTimer.IsEnabled||!(PlacementReady?.Invoke()??true))return;
+        var c=RingConfig.Current;int index=0;
+        foreach(var e in Sorted().Where(e=>e.Pending&&!e.Leaving)){
+            e.Pending=false;int gen=++e.Generation;
+            Fade(e,1,SeedImmediately?0:c.Ms(c.InMs),()=>{if(e.Generation==gen)e.Button.IsHitTestVisible=true;},index++*c.Ms(c.StaggerMs));
+        }
     }
     public void Dispose(){
         disposed=true;timer.Stop();StopMove();canvas.Children.Remove(divider);
