@@ -9,6 +9,7 @@ namespace LGSTrayUI;
 internal static class UpdateTransaction
 {
     internal const string OwnershipMarker=".rings-managed-version";
+    internal static string MarkerPath(string root)=>Path.Combine(Directory.Exists(Path.Combine(root,"app"))?Path.Combine(root,"app"):root,OwnershipMarker);
     internal static void MarkReady()
     {
         string? path=Environment.GetEnvironmentVariable("RINGS_STARTUP_READY");
@@ -35,7 +36,7 @@ internal static class UpdateTransaction
         var full=Path.GetFullPath(directory);
         if(!string.Equals(Path.GetDirectoryName(full),Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase))return false;
         if(!Regex.IsMatch(Path.GetFileName(full),@"^rings-[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{8}$")||
-            !File.Exists(Path.Combine(full,OwnershipMarker)))return false;
+            !File.Exists(MarkerPath(full)))return false;
         if((File.GetAttributes(full)&FileAttributes.ReparsePoint)!=0)return false;
         string entry=Path.Combine(full,"LGSTray.exe");
         if(string.Equals(entry,current,StringComparison.OrdinalIgnoreCase)||string.Equals(entry,previous,StringComparison.OrdinalIgnoreCase))return false;

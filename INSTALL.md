@@ -24,3 +24,7 @@ No stable release tag should be created until all automated tests and the intera
 ## Portable layout (11.0.2 and later)
 
 Launch the outer LGSTray.exe, not the worker. All support binaries and license documents are under app/; no PDB debug symbols are shipped in the user ZIP. A launch from a different working directory is exercised in Windows CI. Older versions that require a flat update archive need a one-time manual ZIP upgrade. Existing settings remain under %LOCALAPPDATA%\\LGSTray. If you enabled startup in an older installation, toggle it off/on once from the new version to register its outer launcher.
+
+## Rings 12 maintenance
+
+Settings, device inventory and themes are saved by a coalescing background writer. Diagnostics can be viewed and copied manually in Settings → Diagnostics. Supported update transactions use a startup confirmation from the new UI process; on failed startup the launcher attempts to restart the previous version. Local TOML overrides are copied and the old main TOML is saved as app/appsettings.previous.toml for review. Old-version cleanup is user-confirmed and restricted to marked managed folders older than seven days, preserving current and previous installations. A real release-to-release test is still required.

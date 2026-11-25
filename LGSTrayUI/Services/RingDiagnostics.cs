@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
@@ -10,11 +10,11 @@ namespace LGSTrayUI;
 internal sealed record ProviderDiagnostic(string Id,bool Enabled,bool Busy,int Failures,double LastMs,int Count,DateTimeOffset Updated,string? Error);
 internal static class RingDiagnostics
 {
-    private static readonly Dictionary<string,ProviderDiagnostic> providers=new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string,ProviderDiagnostic> providers=new(StringComparer.Ordinal);
     private static DeviceGroup[] groups=[];
-    private static readonly Dictionary<string,string> selected=new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string,string> selected=new(StringComparer.Ordinal);
     internal static void Provider(ProviderDiagnostic value)=>providers[value.Id]=value;
-    internal static void Observe(DeviceGroup[] snapshot)=>groups=snapshot;
+    internal static void Observe(DeviceGroup[] snapshot){groups=snapshot;var keys=snapshot.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);foreach(var k in selected.Keys)if(!keys.Contains(k))selected.TryRemove(k,out _);}
     internal static void Source(string root,string key)=>selected[root]=key;
     internal static string Report(DateTimeOffset now){
         var b=new StringBuilder();

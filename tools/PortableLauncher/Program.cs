@@ -36,8 +36,7 @@ internal static class Program
                 WorkingDirectory=folder,UseShellExecute=false,CreateNoWindow=true
             };
             // Normal launches never leave a supervising process running.
-            if(!check&&rollback!=null&&ValidPrevious(rollback,folder))
-                return LaunchUpdate(start,rollback);
+            if(!check&&rollback!=null){if(!ValidPrevious(rollback,folder))throw new InvalidOperationException("Invalid previous-version path.");return LaunchUpdate(start,rollback);}
             using(var process=Process.Start(start)){
                 if(process==null)throw new InvalidOperationException("Could not start Battery Monitor.");
                 if(!check)return 0;
@@ -74,7 +73,7 @@ internal static class Program
             if(child==null)throw new InvalidOperationException("New version could not start.");
             var clock=Stopwatch.StartNew();
             while(clock.ElapsedMilliseconds<45000&&!child.HasExited){
-                if(File.Exists(marker)&&File.ReadAllText(marker)==child.Id.ToString()){
+                if(Ready(marker,child.Id)){
                     UpdateStartup(rollback,Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"LGSTray.exe"));
                     return 0;
                 }
@@ -92,6 +91,7 @@ internal static class Program
             try{if(File.Exists(marker))File.Delete(marker);}catch{}
         }
     }
+    private static bool Ready(string marker,int pid){try{return File.Exists(marker)&&File.ReadAllText(marker)==pid.ToString(System.Globalization.CultureInfo.InvariantCulture);}catch(IOException){return false;}catch(UnauthorizedAccessException){return false;}}
     private static int Rollback(string previous){
         var start=new ProcessStartInfo(previous){WorkingDirectory=Path.GetDirectoryName(previous),UseShellExecute=false,CreateNoWindow=true};
         start.EnvironmentVariables.Remove("RINGS_STARTUP_READY");

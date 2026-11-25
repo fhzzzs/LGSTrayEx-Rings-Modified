@@ -48,7 +48,7 @@ internal sealed class ReleaseUpdatePanel:StackPanel
             rollback.Click+=(_,_)=>Restart(previous);Children.Add(rollback);
         }
         var cleanup=new Button{Content="清理旧版本（保留当前与上一版）",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
-        cleanup.Click+=(_,_)=>{if(operation!=null)return;if(MessageBox.Show("删除超过7天且由更新器管理的旧版本？当前版本及上一版本保留。","Battery Monitor",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;try{int n=UpdateTransaction.CleanOldVersions(RingsUpdateService.Versions,PortableLayout.CurrentEntry,RingsUpdateService.PreviousExecutable(),DateTimeOffset.UtcNow);status.Text=$"已清理 {n} 个旧版本。";}catch(Exception ex){status.Text=ex.Message;}};Children.Add(cleanup);
+        cleanup.Click+=async(_,_)=>{if(operation!=null||staged!=null)return;if(MessageBox.Show("删除超过7天且由更新器管理的旧版本？当前版本及上一版本保留。","Battery Monitor",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;using var cts=new CancellationTokenSource();operation=cts;check.IsEnabled=install.IsEnabled=false;try{int n=await System.Threading.Tasks.Task.Run(()=>UpdateTransaction.CleanOldVersions(RingsUpdateService.Versions,PortableLayout.CurrentEntry,RingsUpdateService.PreviousExecutable(),DateTimeOffset.UtcNow));status.Text=$"已清理 {n} 个旧版本。";}catch(Exception ex){status.Text=ex.Message;}finally{operation=null;check.IsEnabled=true;install.IsEnabled=release!=null;}};Children.Add(cleanup);
         Children.Add(new TextBlock{Text="更新仅在手动确认后执行。新版本启动失败可自动恢复上一版（支持新启动器的版本）；旧目录和个性化设置保留。",TextWrapping=TextWrapping.Wrap,Opacity=.75,Margin=new Thickness(0,8,0,0)});
         Unloaded+=(_,_)=>operation?.Cancel();
     }

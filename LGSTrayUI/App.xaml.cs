@@ -312,6 +312,7 @@ public partial class App : Application
         var host=_host;_host=null;
         try{host?.Services.GetService<LGSTrayHIDManager>()?.RequestStop();}catch{}
         CloseUi(host);
+        if(!_exitRequested)try{AsyncPreferenceWriter.Shared.FlushAsync(TimeSpan.FromMilliseconds(500)).GetAwaiter().GetResult();}catch{}
         // Session shutdown can bypass RequestExit. Never synchronously wait on
         // background disposal from a dispatcher that is already shutting down.
         if(host!=null)_=Task.Run(async()=>{try{using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(2));await host.StopAsync(stop.Token);host.Dispose();}catch{}});
@@ -332,7 +333,7 @@ public partial class App : Application
         if(_restartExecutable is string executable)try{
             var start=new System.Diagnostics.ProcessStartInfo(executable){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(executable)!};
             start.ArgumentList.Add("--wait-parent="+Environment.ProcessId);
-            if(File.Exists(Path.Combine(Path.GetDirectoryName(executable)!,"app",UpdateTransaction.OwnershipMarker))||File.Exists(Path.Combine(Path.GetDirectoryName(executable)!,UpdateTransaction.OwnershipMarker)))
+            if(File.Exists(UpdateTransaction.MarkerPath(Path.GetDirectoryName(executable)!)))
                 start.ArgumentList.Add("--update-from="+PortableLayout.CurrentEntry);
             if(LoggingEnabled)start.ArgumentList.Add("--log");
             System.Diagnostics.Process.Start(start);

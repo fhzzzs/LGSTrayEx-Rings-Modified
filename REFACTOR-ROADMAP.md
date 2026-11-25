@@ -45,3 +45,14 @@ One live Xbox 360 Controller for Windows WGI record with valid battery data and 
 ### Rings 11.0.2 portable packaging
 
 Root launcher plus private app/ folder; no shipped PDBs. Keep WPF and HID libraries together, route startup/update/rollback through the outer entry, and validate the published launcher from a different working directory in Windows CI. Existing user JSON paths are unchanged. Older flat-only updaters require manual upgrade once.
+
+## Rings 12.0 — remaining workstreams
+- 10: Shared compositor frame clock for custom ring movement, fading, color, level and charging animation; inactive participants unregister. Offline grace and demo timers remain low-frequency state timers.
+- 11: Coalesced serialized background atomic writes for ring settings, themes and inventory; bounded final flush.
+- 12: Generic validated field view models and two-way bindings for shared controls; complex device/theme pages still retain programmatic view code.
+- 13: Managed updates stage side-by-side, preserve local TOML overrides and prior main TOML, supervise startup with a readiness marker, attempt previous-version rollback on failure, and offer explicit guarded cleanup. This requires the new launcher on the target package and update-aware current version. Real release-to-release and failure tests remain required.
+- 14: Local diagnostics page reports source selection, device grouping, provider latency/errors and current frame participants.
+- 15: Retire old model-only ReadAll aggregation, unused freshness helper and obsolete notification DI registration. Legacy upstream notification implementation/tests remain until separately migrated.
+- 16: Add deterministic source churn, 50-source grouping, rapid disconnect/reconnect, simulated 24-hour wake, writer coalescing and managed update cleanup tests. These are simulated tests; actual 24-hour running, hardware and shell interaction are not proven by CI.
+
+The final build retains the root launcher plus app directory. No native left placement code.

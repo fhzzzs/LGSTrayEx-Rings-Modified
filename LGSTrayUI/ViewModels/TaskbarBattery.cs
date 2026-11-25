@@ -63,25 +63,6 @@ internal sealed record TaskbarBattery
     private static string Identity(LogiDevice d) => !string.IsNullOrWhiteSpace(d.DeviceSignature) ? d.DeviceSignature : d.DeviceId;
     private static string Model(string name) => new string(name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
 
-    // Merge one Native and one G HUB reading only when the model is unambiguous.
-    // Multiple units of the same model on either source remain separate slots.
-    public static IReadOnlyList<TaskbarBattery> ReadAll(IEnumerable<LogiDevice> devices)
-    {
-        var rows = new List<TaskbarBattery>();
-        foreach (var model in devices.Where(d => d.HasBattery && Rank(d.DeviceType) < 4)
-            .GroupBy(d => (d.DeviceType, Model(d.DeviceName))))
-        {
-            var sources = model.GroupBy(d => d.DataSource).ToArray();
-            string key = $"logi:{model.Key.DeviceType}:{model.Key.Item2}";
-            if (sources.All(s => s.Count() == 1))
-                rows.Add(From(Best(model), key));
-            else
-                foreach (var device in model.OrderBy(d => Identity(d), StringComparer.Ordinal))
-                    rows.Add(From(device, $"{key}:{device.DataSource}:{Identity(device)}"));
-        }
-        return rows.OrderBy(d => Rank(d.Type)).ThenBy(d => d.Key, StringComparer.Ordinal).ToArray();
-    }
-
     public static IReadOnlyList<TaskbarBattery> ReadSources(IEnumerable<LogiDevice> devices) => devices
         .Where(d=>d.HasBattery&&Rank(d.DeviceType)<4)
         .GroupBy(d=>$"logi:{d.DeviceType}:{Model(d.DeviceName)}:{d.DataSource}:{Identity(d)}",StringComparer.Ordinal)

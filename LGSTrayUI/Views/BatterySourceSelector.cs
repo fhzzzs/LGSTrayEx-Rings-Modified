@@ -9,10 +9,7 @@ namespace LGSTrayUI;
 internal sealed class BatterySourceSelector
 {
     private readonly Dictionary<string,string> selected=new(StringComparer.Ordinal);
-    // Native Logitech readers may legitimately poll only once per 600 seconds.
-    internal static readonly TimeSpan StaleAfter=TimeSpan.FromMinutes(20);
     internal static bool Usable(TaskbarBattery row)=>row.IsConnected&&row.Level is >=0 and <=100;
-    internal static bool Fresh(TaskbarBattery row,DateTimeOffset now)=>row.Updated!=DateTimeOffset.MinValue&&now-row.Updated<=StaleAfter;
     internal DeviceGroup[] Select(IEnumerable<DeviceGroup> groups,RingPreferences preferences,DateTimeOffset now)
     {
         var result=new List<DeviceGroup>();
@@ -32,7 +29,7 @@ internal sealed class BatterySourceSelector
             chosen??=candidates.Length>0?DeviceIdentityManager.Best(candidates,null):
                 DeviceIdentityManager.Best(sources.Where(d=>d.IsConnected&&SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Band).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
             if(SourceReading.Normalize(chosen,now,preferences).Quality==ReadingQuality.Stale)
-                chosen=chosen with{LastKnownLevel=chosen.Level,Level=null,ShortLabel=null,Stale=true,Charging=false};
+                chosen=chosen with{LastKnownLevel=chosen.Level??chosen.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false};
             selected[root]=chosen.Key;RingDiagnostics.Source(root,chosen.Key);
             // Preserve group identity/name and all individual source data.
             result.Add(group with{Reading=chosen with{Key=root,Name=group.Reading.Name}});

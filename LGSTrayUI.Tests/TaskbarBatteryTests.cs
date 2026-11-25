@@ -5,6 +5,7 @@ namespace LGSTrayUI.Tests;
 
 public class TaskbarBatteryTests
 {
+    private static TaskbarBattery[] Read(IEnumerable<LogiDevice> devices)=>DeviceIdentityManager.Group(TaskbarBattery.ReadSources(devices),new RingPreferences()).Select(g=>g.Reading).ToArray();
     [Fact]
     public void DevicesSortByCategoryAndDoNotDropExtraMice()
     {
@@ -14,7 +15,7 @@ public class TaskbarBatteryTests
             new() { DeviceType = DeviceType.Mouse, DeviceName = "Mouse B" },
             new() { DeviceType = DeviceType.Gamepad, DeviceName = "Controller" },
             new() { DeviceType = DeviceType.Headset, HasBattery = false }];
-        var rows = TaskbarBattery.ReadAll(devices);
+        var rows = Read(devices);
         Assert.Equal(new[] { DeviceType.Mouse, DeviceType.Mouse, DeviceType.Headset, DeviceType.Keyboard, DeviceType.Gamepad }, rows.Select(r => r.Type));
         Assert.All(rows, row => Assert.Equal("Off", row.Percent));
     }
@@ -43,7 +44,7 @@ public class TaskbarBatteryTests
         var device = new LogiDevice { DeviceType = DeviceType.Headset, DeviceName = "PRO X 2",
             BatteryPercentage = percent, IsOnline = online, IsWiredMode = cableTransition,
             PowerSupplyStatus = Enum.Parse<PowerSupplyStatus>(power) };
-        var result = TaskbarBattery.ReadAll([device]).Single();
+        var result = Read([device]).Single();
         Assert.Equal(expectedPercent, result.Percent);
         Assert.Equal(expectedStatus, result.Status);
     }
@@ -58,9 +59,9 @@ public class TaskbarBatteryTests
         var otherMouse = new LogiDevice { DeviceType = DeviceType.Mouse, DeviceName = "G903", IsOnline = true,
             LastUpdate = DateTimeOffset.Now, BatteryPercentage = 80 };
         var devices = new[] { otherMouse, native, ghub };
-        Assert.Equal("34%", TaskbarBattery.ReadAll(devices).Single(d => d.Name == native.DeviceName).Percent);
+        Assert.Equal("34%", Read(devices).Single(d => d.Name == native.DeviceName).Percent);
         native.IsOnline = true;
-        Assert.Equal("27%", TaskbarBattery.ReadAll(devices).Single(d => d.Name == native.DeviceName).Percent);
+        Assert.Equal("27%", Read(devices).Single(d => d.Name == native.DeviceName).Percent);
     }
 
     [Theory]
@@ -96,8 +97,8 @@ public class TaskbarBatteryTests
     {
         var first = new LogiDevice { DeviceType = DeviceType.Mouse, DeviceName = "G903", DeviceId = "a" };
         var second = new LogiDevice { DeviceType = DeviceType.Mouse, DeviceName = "G903", DeviceId = "b" };
-        var rows = TaskbarBattery.ReadAll([first, second]);
-        Assert.Equal(2, rows.Count);
+        var rows = Read([first, second]);
+        Assert.Equal(2, rows.Length);
         Assert.NotEqual(rows[0].Key, rows[1].Key);
     }
 
