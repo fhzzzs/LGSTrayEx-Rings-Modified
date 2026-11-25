@@ -61,8 +61,8 @@ internal static class DeviceIdentityManager
         if(c.AutoDeduplicate){
             var conflicts=raw.GroupBy(d=>roots[d.Key]).Where(ConflictingHardware).Select(g=>g.Key).ToHashSet(StringComparer.Ordinal);
             if(conflicts.Count>0){
-                foreach(var key in c.AutomaticAliases.Keys.ToArray())
-                    if(conflicts.Contains(Resolve(c,key)))c.AutomaticAliases.Remove(key);
+                var invalid=c.AutomaticAliases.Keys.Where(key=>conflicts.Contains(Resolve(c,key))).ToArray();
+                foreach(var key in invalid)c.AutomaticAliases.Remove(key);
                 roots=raw.ToDictionary(d=>d.Key,d=>Resolve(c,d.Key),StringComparer.Ordinal);
             }
         }

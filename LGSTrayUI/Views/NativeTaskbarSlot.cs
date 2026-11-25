@@ -41,6 +41,7 @@ internal sealed class NativeTaskbarSlot : IDisposable
         if (_disposed) return;
         var c=RingConfig.Current;
         if(_lastLeft!=c.Left){
+            if(c.Left&&_attach?.IsCompletedSuccessfully==true&&_attach.Result<0){_attemptedPid=0;_attach=null;}
             _lastLeft=c.Left;
             DiagnosticLogger.Log($"NativeLayout mode: {(c.Left?"Left":"Right")}, Windows build {Environment.OSVersion.Version.Build}, monitors {GetSystemMetrics(80)}, architecture {RuntimeInformation.ProcessArchitecture}");
         }

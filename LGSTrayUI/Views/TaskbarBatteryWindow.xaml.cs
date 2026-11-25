@@ -29,18 +29,9 @@ public partial class TaskbarBatteryWindow : Window
     private ContextMenu? _openMenu;
     private readonly PhysicalDeviceCenter _deviceCenter=new(DateTimeOffset.UtcNow);
     private Dictionary<string,TaskbarBattery> _remembered=>_deviceCenter.Inventory;
-    private readonly CancellationTokenSource _stop = new();
-    private readonly string _knownPath = Path.Combine(AppDataPaths.LocalAppDataDir, "taskbar-devices.json");
-    private IReadOnlyList<TaskbarBattery> _bluetooth = Array.Empty<TaskbarBattery>();
-    private IReadOnlyList<TaskbarBattery> _controllers = Array.Empty<TaskbarBattery>();
-    private bool _scanningBluetooth,_scanningControllers;
-    private bool _placementReady;
-    private bool _placementQueued;
-    private IReadOnlyList<TaskbarBattery> _asus=Array.Empty<TaskbarBattery>();
-    private bool _scanningAsus;
-    private DateTimeOffset _nextAsus;
-    private DateTimeOffset _nextBluetooth;
-    private DateTimeOffset _nextControllers;
+    private readonly DeviceScanCoordinator _scanner;
+    private readonly string _knownPath=Path.Combine(AppDataPaths.LocalAppDataDir,"taskbar-devices.json");
+    private bool _placementReady,_placementQueued;
     private readonly RingStripAnimator _animator;
     private RingSettingsWindow? _settings;
     private readonly RingAlerts _alerts = new();
@@ -52,13 +43,14 @@ public partial class TaskbarBatteryWindow : Window
     {
         _tray = tray;
         InitializeComponent();
+        _scanner=new DeviceScanCoordinator(Dispatcher,QueueRefresh);
         _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement){PlacementReady=()=>_placementReady};
         RingConfig.Changed += SettingsChanged;
         _handle = new WindowInteropHelper(this).EnsureHandle();
         TaskbarPlacement.MakeToolWindow(_handle);
         HwndSource.FromHwnd(_handle)?.AddHook(HotkeyHook); RegisterHotKey(_handle,1001,0x4003,0x42);
         _tray.LogiDevices.CollectionChanged += DevicesChanged;
-        LoadKnownDevices();
+        foreach(var d in DeviceInventoryStore.Load(_knownPath))_remembered[d.Key]=d;
         WatchDevices();
         RefreshReadings();
         _positionTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
@@ -69,7 +61,11 @@ public partial class TaskbarBatteryWindow : Window
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool RegisterHotKey(nint h,int id,uint mods,uint key);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint h,int id);
-    private nint HotkeyHook(nint hwnd,int msg,nint wp,nint lp,ref bool handled){if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}return 0;}
+    private nint HotkeyHook(nint hwnd,int msg,nint wp,nint lp,ref bool handled){
+        if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}
+        if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.RequestRescan();
+        return 0;
+    }
     private void DevicesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         WatchDevices();
@@ -99,125 +95,18 @@ public partial class TaskbarBatteryWindow : Window
         _refreshPending = false;
         if (_closed) return;
         var c=RingConfig.Current;
-        var logi=TaskbarBattery.ReadSources(_tray.LogiDevices);
-        var current=logi.Concat(_bluetooth).Concat(_controllers).Concat(_asus)
-            .GroupBy(d=>d.Key,StringComparer.Ordinal).ToDictionary(g=>g.Key,g=>DeviceIdentityManager.Best(g,null),StringComparer.Ordinal);
-        bool inventoryChanged=false;
-        // Migrate legacy synthetic model IDs only when a unique source can be identified.
-        // Keep ambiguous legacy configuration on disk, but never display a fake model record.
-        var migrated=new HashSet<string>();
-        foreach(var key in _remembered.Keys.Where(k=>k.StartsWith("logi:",StringComparison.Ordinal)).ToArray()){
-            var matches=current.Keys.Where(k=>k.StartsWith(key+":",StringComparison.Ordinal)).ToArray();
-            if(matches.Length==0)continue;
-            if(matches.Length==1){DeviceIdentityManager.Inherit(c,key,matches[0]);if(c.Hidden.Contains(key)&&!c.Hidden.Contains(matches[0]))c.Hidden.Add(matches[0]);migrated.Add(matches[0]);}
-            _remembered.Remove(key);inventoryChanged=true;
-        }
-        var previousKeys=_groups.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);
-        var previousRaw=_remembered.Keys.ToHashSet(StringComparer.Ordinal);
-        foreach(var d in current.Values){
-            if(!_remembered.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId||(old.Updated==DateTimeOffset.MinValue&&d.Updated!=DateTimeOffset.MinValue))inventoryChanged=true;
-            _remembered[d.Key]=old!=null&&d.Updated==DateTimeOffset.MinValue?d with{Updated=old.Updated}:d;
-        }
-        foreach(var key in _remembered.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
-            _remembered[key]=_remembered[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
-        var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);
-        int previousModelRoots=c.ModelGroupRoots.Count;
-        _deviceCenter.Regroup(c);
-        var snapshot=ReadSnapshot();
-        _groups=snapshot.Groups;
-        if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)inventoryChanged=true;
-        foreach(var group in _groups){
-            var key=group.Reading.Key;
-            if(group.Sources.All(d=>!previousRaw.Contains(d.Key)&&!migrated.Contains(d.Key))&&!previousKeys.Contains(key)){
-                if(!c.AutoAdd&&!c.Hidden.Contains(key))c.Hidden.Add(key);
-                if(c.Order.Count>0&&!c.Order.Contains(key))c.Order.Add(key);
-            }
-        }
-        if(inventoryChanged){SaveKnownDevices();RingConfig.Save();}
-        ApplySnapshot(snapshot,true);
+        bool changed=_deviceCenter.RefreshInventory(TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings),c);
+        if(changed){SaveKnownDevices();RingConfig.Save();}
+        ApplySnapshot(ReadSnapshot(),true);
     }
     private void SettingsChanged(){ _deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2)); RefreshReadings(); _animator.RefreshLayout(); }
     private void UpdatePlacement(){if(_closed)return;_placementReady=false;if(_placementQueued)return;_placementQueued=true;Dispatcher.BeginInvoke(new Action(()=>{_placementQueued=false;Reposition(null,EventArgs.Empty);}));}
     internal void ShowSettings(){ if(_openMenu!=null)_openMenu.IsOpen=false; if(_settings!=null){_settings.Activate();return;} _settings=new RingSettingsWindow(_tray, _rows, _groups, ForgetKnown); _settings.Closed+=(_,_)=>_settings=null; _settings.Show(); _settings.Activate(); }
     internal int OnlineCount=>_rows.Count(d=>!d.Offline);
     internal void ShowDevices(){ShowSettings();_settings?.OpenDevices();}
-    private void ForgetKnown(string key){var group=_groups.FirstOrDefault(g=>g.Reading.Key==key);if(group==null||!group.Reading.Offline)return;var active=TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_bluetooth).Concat(_controllers).Concat(_asus).Select(d=>d.Key).ToHashSet();foreach(var d in group.Sources)if(!active.Contains(d.Key))_remembered.Remove(d.Key);SaveKnownDevices();QueueRefresh();}
-    private static string Normalize(string name){var n=new string(name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());if(n.Contains("G735"))return "G735";if(n.Contains("HARPEACEMINI")&&!n.Contains("HARPEII"))return "HARPEACEMINI";return n;}
-    private static void MoveTo(UIElementCollection children, UIElement item, int position)
-    {
-        int previous = children.IndexOf(item);
-        if (previous == position) return;
-        if (previous >= 0) children.RemoveAt(previous);
-        children.Insert(position, item);
-    }
-    private sealed record KnownDevice(DeviceType Type, string Name, string Key, string? PhysicalId=null,DateTimeOffset Updated=default);
-    private void LoadKnownDevices()
-    {
-        try
-        {
-            if (!File.Exists(_knownPath)) return;
-            foreach (var item in JsonSerializer.Deserialize<KnownDevice[]>(File.ReadAllText(_knownPath)) ?? [])
-            {
-                if (string.IsNullOrWhiteSpace(item.Key) || TaskbarBattery.Rank(item.Type) >= 4) continue;
-                _remembered[item.Key] = new(item.Type, item.Name, null, "离线", false, item.Updated, item.Key, PhysicalId:item.PhysicalId);
-            }
-        }
-        catch (Exception ex) { DiagnosticLogger.LogWarning($"Taskbar inventory load: {ex.Message}"); }
-    }
-    private void SaveKnownDevices()
-    {
-        try
-        {
-            var inventory = _remembered.Values.Select(d => new KnownDevice(d.Type, d.Name, d.Key,d.PhysicalId,d.Updated)).ToArray();
-            Directory.CreateDirectory(Path.GetDirectoryName(_knownPath)!);
-            RingSettingsStore.WriteAtomic(_knownPath,JsonSerializer.Serialize(inventory));
-        }
-        catch (Exception ex) { DiagnosticLogger.LogWarning($"Taskbar inventory save: {ex.Message}"); }
-    }
-    private async Task ScanBluetoothAsync()
-    {
-        _scanningBluetooth = true;
-        try
-        {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-            timeout.CancelAfter(TimeSpan.FromSeconds(25));
-            var readings = await BluetoothBatteryReader.ReadAsync(timeout.Token);
-            if (!_closed&&RingConfig.Current.UseBle){_bluetooth=readings;QueueRefresh();}
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { DiagnosticLogger.LogWarning($"BLE discovery: {ex.Message}"); }
-        finally { _scanningBluetooth = false; _nextBluetooth = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(RingConfig.Current.BleSeconds,5,120)); }
-    }
-    private async Task ScanAsusAsync(){
-        _scanningAsus=true;
-        try{var readings=await Task.Run(AsusBatteryReader.Read);if(!_closed){_asus=readings;QueueRefresh();}}
-        catch(Exception ex){DiagnosticLogger.LogWarning("ASUS battery: "+ex.Message);if(!_closed){_asus=Array.Empty<TaskbarBattery>();QueueRefresh();}}
-        finally{_scanningAsus=false;_nextAsus=DateTimeOffset.UtcNow.AddSeconds(10);}
-    }
-    private async Task ScanControllersAsync()
-    {
-        _scanningControllers=true;
-        var c=RingConfig.Current;bool gipEnabled=c.UseGip,xinputEnabled=c.UseXInput;
-        try{
-            var readings=await Task.Run(()=>{
-                var gip=gipEnabled?GipBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
-                return gip.Length>0?gip:xinputEnabled?XInputBatteryReader.Read().ToArray():Array.Empty<TaskbarBattery>();
-            },_stop.Token);
-            if(!_closed&&gipEnabled==RingConfig.Current.UseGip&&xinputEnabled==RingConfig.Current.UseXInput&&!_controllers.SequenceEqual(readings)){
-                _controllers=readings;QueueRefresh();
-            }
-        }catch(OperationCanceledException){}catch(Exception ex){DiagnosticLogger.LogWarning("Controller discovery: "+ex.Message);}
-        finally{_scanningControllers=false;_nextControllers=DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(RingConfig.Current.PollSeconds,.5,60));}
-    }
-    private void PollExtraDevices()
-    {
-        var now = DateTimeOffset.UtcNow;
-        // ROG OMNI is an automatic hardware provider, not a user preference.
-        if(!_scanningAsus&&now>=_nextAsus)_=ScanAsusAsync();
-        if(!_scanningControllers&&now>=_nextControllers)_=ScanControllersAsync();
-        if (!RingConfig.Current.UseBle) { if (_bluetooth.Count>0) { _bluetooth=Array.Empty<TaskbarBattery>(); QueueRefresh(); } }
-        else if (!_scanningBluetooth && now >= _nextBluetooth) _ = ScanBluetoothAsync();
-    }
+    private void ForgetKnown(string key){var group=_groups.FirstOrDefault(g=>g.Reading.Key==key);if(group==null||!group.Reading.Offline)return;var active=TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings).Select(d=>d.Key).ToHashSet();foreach(var d in group.Sources)if(!active.Contains(d.Key))_remembered.Remove(d.Key);SaveKnownDevices();QueueRefresh();}
+    private void SaveKnownDevices(){try{DeviceInventoryStore.Save(_knownPath,_remembered.Values);}catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory save: "+ex.Message);}}
+    private void PollExtraDevices()=>_scanner.Poll(DateTimeOffset.UtcNow);
 
     private PhysicalDeviceSnapshot ReadSnapshot()
     {
@@ -300,13 +189,12 @@ public partial class TaskbarBatteryWindow : Window
         b.Unloaded+=(_,_)=>{if(menu.IsOpen)menu.IsOpen=false;};
         return b;
     }
-    internal void Rescan(){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_nextBluetooth=_nextControllers=_nextAsus=DateTimeOffset.MinValue;PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
+    internal void Rescan(){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.RequestRescan();PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
 
     private void ForgetOffline(object sender, RoutedEventArgs e)
     {
         // Explicit cleanup of previously discovered, now absent devices (not active provider rows).
-        var activeKeys = TaskbarBattery.ReadSources(_tray.LogiDevices).Select(d => d.Key)
-            .Concat(_bluetooth.Select(d => d.Key)).Concat(_controllers.Select(d => d.Key)).Concat(_asus.Select(d=>d.Key)).ToHashSet(StringComparer.Ordinal);
+        var activeKeys = TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings).Select(d=>d.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var key in _remembered.Where(p => p.Value.Offline && !activeKeys.Contains(p.Key)).Select(p => p.Key).ToArray())
             _remembered.Remove(key);
         SaveKnownDevices();
@@ -320,8 +208,7 @@ public partial class TaskbarBatteryWindow : Window
         NativeTaskbarSlot.Instance.Dispose();
         UnregisterHotKey(_handle,1001); HwndSource.FromHwnd(_handle)?.RemoveHook(HotkeyHook);
         RingConfig.Changed -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
-        _stop.Cancel();
-        _stop.Dispose();
+        _scanner.Dispose();
         _positionTimer.Stop();
         _positionTimer.Tick -= Reposition;
         _tray.LogiDevices.CollectionChanged -= DevicesChanged;

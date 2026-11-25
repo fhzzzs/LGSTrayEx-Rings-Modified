@@ -17,6 +17,40 @@ internal sealed class PhysicalDeviceCenter
     internal PhysicalDeviceCenter(DateTimeOffset now){connections=new(now);}
     internal void Suppress(DateTimeOffset now,TimeSpan duration)=>connections.Suppress(now,duration);
     internal void Regroup(RingPreferences c){rawGroups=DeviceIdentityManager.Group(Inventory.Values,c);}
+    internal bool RefreshInventory(IEnumerable<TaskbarBattery> readings,RingPreferences c)
+    {
+        var current=readings.GroupBy(d=>d.Key,StringComparer.Ordinal)
+            .ToDictionary(g=>g.Key,g=>DeviceIdentityManager.Best(g,null),StringComparer.Ordinal);
+        bool changed=false;
+        var migrated=new HashSet<string>(StringComparer.Ordinal);
+        // Only legacy synthetic model keys have three segments; a real
+        // provider key can itself contain additional colon-separated data.
+        foreach(var key in Inventory.Keys.Where(k=>k.StartsWith("logi:",StringComparison.Ordinal)&&k.Split(':').Length==3).ToArray()){
+            var matches=current.Keys.Where(k=>k.StartsWith(key+":",StringComparison.Ordinal)).ToArray();
+            if(matches.Length==0)continue;
+            if(matches.Length==1){DeviceIdentityManager.Inherit(c,key,matches[0]);if(c.Hidden.Contains(key)&&!c.Hidden.Contains(matches[0]))c.Hidden.Add(matches[0]);migrated.Add(matches[0]);}
+            Inventory.Remove(key);changed=true;
+        }
+        var previousKeys=rawGroups.Select(g=>g.Reading.Key).ToHashSet(StringComparer.Ordinal);
+        var previousRaw=Inventory.Keys.ToHashSet(StringComparer.Ordinal);
+        foreach(var d in current.Values){
+            if(!Inventory.TryGetValue(d.Key,out var old)||old.Name!=d.Name||old.Type!=d.Type||old.PhysicalId!=d.PhysicalId||(old.Updated==DateTimeOffset.MinValue&&d.Updated!=DateTimeOffset.MinValue))changed=true;
+            Inventory[d.Key]=old!=null&&d.Updated==DateTimeOffset.MinValue?d with{Updated=old.Updated}:d;
+        }
+        foreach(var key in Inventory.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
+            Inventory[key]=Inventory[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+        var previousAliases=new Dictionary<string,string>(c.AutomaticAliases);int previousModelRoots=c.ModelGroupRoots.Count;
+        Regroup(c);
+        if(previousAliases.Count!=c.AutomaticAliases.Count||previousAliases.Any(p=>!c.AutomaticAliases.TryGetValue(p.Key,out var v)||v!=p.Value)||previousModelRoots!=c.ModelGroupRoots.Count)changed=true;
+        foreach(var group in rawGroups){
+            var key=group.Reading.Key;
+            if(group.Sources.All(d=>!previousRaw.Contains(d.Key)&&!migrated.Contains(d.Key))&&!previousKeys.Contains(key)){
+                if(!c.AutoAdd&&!c.Hidden.Contains(key)){c.Hidden.Add(key);changed=true;}
+                if(c.Order.Count>0&&!c.Order.Contains(key)){c.Order.Add(key);changed=true;}
+            }
+        }
+        return changed;
+    }
     internal PhysicalDeviceSnapshot Advance(RingPreferences c,DateTimeOffset now)
     {
         var selected=selector.Select(rawGroups,c,now);
