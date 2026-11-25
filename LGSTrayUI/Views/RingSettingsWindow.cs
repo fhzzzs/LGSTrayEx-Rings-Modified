@@ -82,9 +82,9 @@ internal sealed partial class RingSettingsWindow : Window
         var sl=new Slider{Minimum=min,Maximum=max,Value=Math.Clamp(v,min,max),TickFrequency=step,IsSnapToTickEnabled=true,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,10,0)};Grid.SetColumn(sl,1);line.Children.Add(sl);
         var num=new TextBox{Text=sl.Value.ToString("0.##",CultureInfo.InvariantCulture),VerticalAlignment=VerticalAlignment.Center,Padding=new Thickness(4),TextAlignment=TextAlignment.Right};Grid.SetColumn(num,2);line.Children.Add(num);p.Children.Add(line);
         void Demo(){if(play)Play(text.Contains("流光")?"charge":text.Contains("Fade In")?"in":text.Contains("Fade Out")||text.Contains("离线")||text.Contains("Off")?"out":text.Contains("圆环")||text.Contains("颜色")?"battery":"full");}
-        var field=settingsModel.Field(sl.Value,set,n=>RingSettingsViewModel.NormalizeNumber(n,min,max,step));sl.SetBinding(Slider.ValueProperty,FieldBinding(field));
+        var field=settingsModel.Field(sl.Value,set,n=>RingSettingsViewModel.NormalizeNumber(n,min,max,step));sl.SetBinding(System.Windows.Controls.Slider.ValueProperty,FieldBinding(field));
         sl.ValueChanged+=(_,_)=>num.Text=sl.Value.ToString("0.##",CultureInfo.InvariantCulture);
-        void Commit(){if(RingSettingsViewModel.TryNumber(num.Text,min,max,step,out var n)){sl.SetCurrentValue(Slider.ValueProperty,n);Demo();}num.Text=sl.Value.ToString("0.##",CultureInfo.InvariantCulture);}
+        void Commit(){if(RingSettingsViewModel.TryNumber(num.Text,min,max,step,out var n)){sl.SetCurrentValue(System.Windows.Controls.Slider.ValueProperty,n);Demo();}num.Text=sl.Value.ToString("0.##",CultureInfo.InvariantCulture);}
         num.LostKeyboardFocus+=(_,_)=>Commit();num.KeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Enter){Commit();e.Handled=true;}};if(play)sl.PreviewMouseLeftButtonUp+=(_,_)=>Demo();
     }
     private void TextEntry(Panel p,string text,string v,Action<string> set){p.Children.Add(Label(text));var t=new TextBox{Text=v,Margin=new Thickness(0,0,0,7)};var field=settingsModel.Field(v,set);t.LostKeyboardFocus+=(_,_)=>field.Value=t.Text;t.KeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Enter)field.Value=t.Text;};p.Children.Add(t);}

@@ -12,6 +12,7 @@ public sealed class BatteryRing : FrameworkElement
     private static readonly DependencyProperty GrayProperty=DependencyProperty.Register("Gray",typeof(double),typeof(BatteryRing),new FrameworkPropertyMetadata(0d,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly DependencyProperty ShinePhaseProperty=DependencyProperty.Register("ShinePhase",typeof(double),typeof(BatteryRing),new FrameworkPropertyMetadata(0d,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly Geometry Bolt=Geometry.Parse("M47,11 L42,20 H46 L44,27 L52,17 H48 L51,11 Z");
+    static BatteryRing(){foreach(var glyph in Glyphs)glyph.Freeze();Bolt.Freeze();}
     private double shinePeriod,shineStart;
     private readonly object shineKey=new();
     private readonly System.Collections.Generic.Dictionary<DependencyProperty,object> channels=new();
@@ -44,7 +45,7 @@ public sealed class BatteryRing : FrameworkElement
         var from=Ink;Transition(InkProperty,from==to?0:ms,t=>SetValue(InkProperty,Mix(from,to,t)));
     }
     private void Recolor(){if(DataContext is TaskbarBattery d){AnimateInk(Settings.Accent(d),0);SyncShine();InvalidateVisual();}}
-    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e){base.OnPropertyChanged(e);if(e.Property!=DataContextProperty||e.NewValue is not TaskbarBattery d)return;var old=e.OldValue as TaskbarBattery;var c=Settings;bool fresh=old?.Key!=d.Key;
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e){base.OnPropertyChanged(e);if(e.Property!=DataContextProperty||e.NewValue is not TaskbarBattery d)return;var old=e.OldValue as TaskbarBattery;if(old!=null&&(old with{Updated=d.Updated})==d)return;var c=Settings;bool fresh=old?.Key!=d.Key;
         if(!d.Offline&&(fresh||old?.Level!=d.Level||old?.Offline==true))AnimateDouble(LevelProperty,d.Level??0,fresh?0:c.Ms(c.BatteryMs));
         if(fresh||old?.Offline!=d.Offline)AnimateDouble(GrayProperty,d.Offline?1:0,fresh?0:c.Ms(c.GrayMs));
         if(fresh||old==null||c.Accent(old)!=c.Accent(d))AnimateInk(c.Accent(d),fresh?0:c.Ms(d.Offline?c.GrayMs:c.ColorMs));SyncShine();InvalidateVisual();}

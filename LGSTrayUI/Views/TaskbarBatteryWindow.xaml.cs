@@ -24,6 +24,7 @@ public partial class TaskbarBatteryWindow : Window
     private readonly DispatcherTimer _positionTimer,_stateTimer;
     private readonly TaskbarEventMonitor _shellEvents;
     private nint _handle;
+    private readonly uint _taskbarCreated=RegisterWindowMessage("TaskbarCreated");
     private TaskbarPlacement? _position;
     private bool _refreshPending;
     private bool _closed;
@@ -67,7 +68,9 @@ public partial class TaskbarBatteryWindow : Window
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool RegisterHotKey(nint h,int id,uint mods,uint key);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint h,int id);
+    [System.Runtime.InteropServices.DllImport("user32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
     private nint HotkeyHook(nint hwnd,int msg,nint wp,nint lp,ref bool handled){
+        if(_taskbarCreated!=0&&msg==_taskbarCreated){_position=null;TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
         if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}
         if(msg is 0x007E or 0x02E0 or 0x001A){TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
         if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.RequestRescan();

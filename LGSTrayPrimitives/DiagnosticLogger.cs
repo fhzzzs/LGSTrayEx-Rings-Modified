@@ -81,7 +81,7 @@ public static class DiagnosticLogger
             try
             {
                 using var mutex = new Mutex(false, "LOG_WRITE");
-                if (mutex.WaitOne(Timeout.Infinite, false))
+                if (TryAcquire(mutex))
                 {
                     try { TrimLogFile(); }
                     finally { mutex.ReleaseMutex(); }
@@ -148,13 +148,20 @@ public static class DiagnosticLogger
         WriteToConsole(formatted);
     }
 
+    private static bool TryAcquire(Mutex mutex)
+    {
+        try { return mutex.WaitOne(TimeSpan.FromMilliseconds(200), false); }
+        catch (AbandonedMutexException) { return true; }
+    }
+
     private static void WriteToFile(string message)
     {
         using var mutex = new Mutex(false, "LOG_WRITE");
         var hasHandle = false;
         try
         {
-            hasHandle = mutex.WaitOne(Timeout.Infinite, false);
+            hasHandle = TryAcquire(mutex);
+            if (!hasHandle) return;
 
             File.AppendAllText(_logFilePath, message + Environment.NewLine);
 
@@ -204,12 +211,16 @@ public static class DiagnosticLogger
         {
             if (!File.Exists(_logFilePath)) return;
 
-            var lines = File.ReadAllLines(_logFilePath);
-            if (lines.Length <= _maxLines) return;
-
-            // Keep the last _maxLines lines
-            var trimmed = lines[^_maxLines..];
-            File.WriteAllLines(_logFilePath, trimmed);
+            if (_maxLines <= 0) return;
+            var tail = new Queue<string>();
+            long count = 0;
+            foreach (var line in File.ReadLines(_logFilePath))
+            {
+                if (tail.Count == _maxLines) tail.Dequeue();
+                tail.Enqueue(line);
+                count++;
+            }
+            if (count > _maxLines) File.WriteAllLines(_logFilePath, tail);
         }
         catch { }
     }

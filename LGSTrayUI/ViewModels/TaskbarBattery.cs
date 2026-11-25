@@ -51,8 +51,8 @@ internal sealed record TaskbarBattery
     public int? LastKnownLevel {get;init;}
     public ReadingQuality Quality=>Stale?ReadingQuality.Stale:Level is >=0 and <=100?ReadingQuality.Exact:
         ShortLabel is "Empty" or "Low" or "Med" or "Full"?ReadingQuality.Band:ReadingQuality.Unknown;
-    public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value ? $"{value}%" : "—");
-    public int BarValue => Level ?? 0;
+    public string Percent => Offline ? "Off" : Stale ? "—" : ShortLabel ?? (Level is int value && value is >=0 and <=100 ? $"{value}%" : "—");
+    public int BarValue => Level is >=0 and <=100 ? Level.Value : 0;
     public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";
     public string UpdatedLabel => Stale&&LastKnownLevel is int last ? $"历史电量 {last}% · {Updated.ToLocalTime():HH:mm}" : Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";
     public static int Rank(DeviceType type) => type switch { DeviceType.Mouse => 0, DeviceType.Headset => 1, DeviceType.Keyboard => 2, DeviceType.Gamepad => 3, _ => 4 };

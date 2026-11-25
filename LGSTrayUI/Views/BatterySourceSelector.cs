@@ -30,6 +30,7 @@ internal sealed class BatterySourceSelector
                 DeviceIdentityManager.Best(sources.Where(d=>d.IsConnected&&SourceReading.Normalize(d,now,preferences).Quality==ReadingQuality.Band).DefaultIfEmpty(DeviceIdentityManager.Best(sources,null)),null);
             if(SourceReading.Normalize(chosen,now,preferences).Quality==ReadingQuality.Stale)
                 chosen=chosen with{LastKnownLevel=chosen.Level??chosen.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false};
+            if(chosen.Level is int level&&(level<0||level>100))chosen=chosen with{Level=null};
             selected[root]=chosen.Key;RingDiagnostics.Source(root,chosen.Key);
             // Preserve group identity/name and all individual source data.
             result.Add(group with{Reading=chosen with{Key=root,Name=group.Reading.Name}});

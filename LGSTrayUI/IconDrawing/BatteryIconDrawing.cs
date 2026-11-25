@@ -170,7 +170,7 @@ public static partial class BatteryIconDrawing
         {
             Bitmap missing = Missing;
             g.DrawImage(missing, destRect, 0, 0, missing.Width, missing.Height, GraphicsUnit.Pixel, wrapMode);
-            missing.Dispose();
+            // ResourceManager owns this shared bitmap.
         }
         else
         {
@@ -183,7 +183,7 @@ public static partial class BatteryIconDrawing
         foreach (var image in layers)
         {
             g.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
-            image.Dispose();
+            // Shared resource; do not dispose.
         }
 
         // Overlay charging indicator if device is charging
@@ -220,16 +220,10 @@ public static partial class BatteryIconDrawing
                         chargingOverlay.Width, chargingOverlay.Height,
                         GraphicsUnit.Pixel);
 
-            chargingOverlay.Dispose();
+            // Shared resource; do not dispose.
         }
 
-        g.Save();
-
-        IntPtr iconHandle = b.GetHicon();
-        Icon tempManagedRes = Icon.FromHandle(iconHandle);
-        taskbarIcon.Icon = (Icon)tempManagedRes.Clone();
-        tempManagedRes.Dispose();
-        DestroyIcon(iconHandle);
+        ReplaceIcon(taskbarIcon,b);
     }
 
     public static void DrawNumeric(TaskbarIcon taskbarIcon, LogiDevice device)
@@ -314,17 +308,22 @@ public static partial class BatteryIconDrawing
         }
 
         // Icon
-        IntPtr iconHandle = bitmap.GetHicon();
-        var oldIcon = taskbarIcon.Icon;
+        ReplaceIcon(taskbarIcon,bitmap);
+    }
 
-        using (Icon tempIcon = Icon.FromHandle(iconHandle))
+    private static void ReplaceIcon(TaskbarIcon taskbarIcon, Bitmap bitmap)
+    {
+        IntPtr handle=bitmap.GetHicon();
+        try
         {
-            taskbarIcon.Icon = (Icon)tempIcon.Clone();
+            using var temporary=Icon.FromHandle(handle);
+            var next=(Icon)temporary.Clone();
+            var previous=taskbarIcon.Icon;
+            try { taskbarIcon.Icon=next; }
+            catch { next.Dispose(); throw; }
+            previous?.Dispose();
         }
-
-        // Cleanup
-        DestroyIcon(iconHandle);
-        oldIcon?.Dispose();
+        finally { DestroyIcon(handle); }
     }
 
     /// <summary>
