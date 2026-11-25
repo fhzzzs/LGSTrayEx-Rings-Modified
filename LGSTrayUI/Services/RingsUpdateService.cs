@@ -117,7 +117,6 @@ internal static class RingsUpdateService
             }
         }
         ZipFile.ExtractToDirectory(zip,folder);
-        foreach(var file in new[]{"LGSTray.exe","LGSTrayHID.exe","hidapi.dll","appsettings.toml"})
-            if(!File.Exists(Path.Combine(folder,file)))throw new InvalidDataException("更新包缺少 "+file);
+        if(!PortableLayout.IsCompletePackage(folder))throw new InvalidDataException("更新包缺少启动程序或必要运行文件。");
     }
 }

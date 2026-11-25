@@ -18,6 +18,18 @@ namespace LGSTrayUI
                     if(int.TryParse(arg[14..],out int pid)&&pid>0&&pid!=Environment.ProcessId)
                         try{using var parent=System.Diagnostics.Process.GetProcessById(pid);if(!parent.WaitForExit(10000))return;}catch(ArgumentException){}
                 }
+                if(Array.IndexOf(Environment.GetCommandLineArgs(),"--package-check")>=0){
+                    // CI-only non-interactive probe: verify the actual published
+                    // runtime, native HID library, settings and worker executable.
+                    string folder=AppContext.BaseDirectory;
+                    if(!File.Exists(Path.Combine(folder,"appsettings.toml"))||
+                       !File.Exists(Path.Combine(folder,"LGSTrayHID.exe"))||
+                       !System.Runtime.InteropServices.NativeLibrary.TryLoad(Path.Combine(folder,"hidapi.dll"),out var library)){
+                        Environment.ExitCode=4;return;
+                    }
+                    System.Runtime.InteropServices.NativeLibrary.Free(library);
+                    Environment.ExitCode=0;return;
+                }
                 RunApp();
             }
             catch (Exception ex)

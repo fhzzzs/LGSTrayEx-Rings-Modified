@@ -43,7 +43,7 @@ internal sealed class ReleaseUpdatePanel:StackPanel
             finally{operation=null;check.IsEnabled=true;}
         };
         var previous=RingsUpdateService.PreviousExecutable();
-        if(previous!=null&&!string.Equals(previous,Environment.ProcessPath,StringComparison.OrdinalIgnoreCase)){
+        if(previous!=null&&!string.Equals(previous,PortableLayout.CurrentEntry,StringComparison.OrdinalIgnoreCase)){
             var rollback=new Button{Content="回退到上一版本",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
             rollback.Click+=(_,_)=>Restart(previous);Children.Add(rollback);
         }
@@ -53,7 +53,7 @@ internal sealed class ReleaseUpdatePanel:StackPanel
     private void Restart(string executable){
         if(!File.Exists(executable)||Application.Current is not App app)return;
         if(MessageBox.Show("确认退出当前版本并启动：\n"+executable+"\n\n原目录仍保留。","Battery Monitor 更新",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-        try{if(Environment.ProcessPath is string current)RingsUpdateService.RememberPrevious(current);app.RestartInto(executable);}
+        try{RingsUpdateService.RememberPrevious(PortableLayout.CurrentEntry);app.RestartInto(executable);}
         catch(Exception ex){status.Text="重启准备失败："+ex.Message;}
     }
 }

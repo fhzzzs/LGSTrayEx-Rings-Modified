@@ -120,6 +120,7 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
             RedirectStandardInput = false,
             RedirectStandardOutput = false,
             FileName = daemonPath,
+            WorkingDirectory = AppContext.BaseDirectory,
             Arguments = BuildHidDaemonArguments(),
             UseShellExecute = true,
             CreateNoWindow = true

@@ -41,3 +41,7 @@ Source phases are committed without moving the main branch until all nine are st
 ### Rings 11.0.1 controller compatibility
 
 One live Xbox 360 Controller for Windows WGI record with valid battery data and one live USB XInput slot can be grouped provisionally. Keep the WGI logical ID and battery, retain both sources, and do not permanently assign the XInput slot to that device. Inactive history hints only attach offline placeholders. Multiple live candidates, separate-device choices and other models are not guessed. This is a reversible compatibility heuristic rather than hardware identity proof. Real multi-controller validation remains necessary.
+
+### Rings 11.0.2 portable packaging
+
+Root launcher plus private app/ folder; no shipped PDBs. Keep WPF and HID libraries together, route startup/update/rollback through the outer entry, and validate the published launcher from a different working directory in Windows CI. Existing user JSON paths are unchanged. Older flat-only updaters require manual upgrade once.

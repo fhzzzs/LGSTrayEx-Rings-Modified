@@ -102,7 +102,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
 
             if (value)
             {
-                registryKey.SetValue(AutoStartRegKeyValue, Path.Combine(AppContext.BaseDirectory, Environment.ProcessPath!));
+                registryKey.SetValue(AutoStartRegKeyValue, "\""+PortableLayout.CurrentEntry+"\"");
             }
             else
             {

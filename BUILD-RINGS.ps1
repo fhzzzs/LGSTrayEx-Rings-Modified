@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='11.0.1')
+param([switch]$NoOpen,[switch]$Test,[ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')][string]$RingsVersion='11.0.2')
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
 if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'Windows x64 required.' }
@@ -34,22 +34,44 @@ $zip=Join-Path $PSScriptRoot 'bin\LGSTrayEx-Rings-Portable-x64.zip'
 # Remove only the known generated output folder. Never remove user settings or SDK.
 if(Test-Path $out){Remove-Item -LiteralPath $out -Recurse -Force}
 if(Test-Path $zip){Remove-Item -LiteralPath $zip -Force}
+$app=Join-Path $out 'app'
+New-Item -ItemType Directory -Force $app | Out-Null
 foreach($project in @('LGSTrayHID','LGSTrayUI')) {
-  # The HID worker and UI share a portable directory. Self-contained explicitly bundles Desktop Runtime.
-  & $dotnet publish "$project\$project.csproj" -c Release -r win-x64 --self-contained true /p:PublishProfile=Standalone /p:Version=$version /p:PublishTrimmed=false /p:PublishSingleFile=true
+  # Publish both self-contained executables into the same private app folder.
+  & $dotnet publish "$project\$project.csproj" -c Release -r win-x64 --self-contained true /p:PublishProfile=Standalone /p:Version=$version /p:PublishTrimmed=false /p:PublishSingleFile=true -o "$app"
   if ($LASTEXITCODE -ne 0) { throw "Publish failed: $project" }
 }
 foreach($file in @('LGSTray.exe','LGSTrayHID.exe','hidapi.dll','appsettings.toml')) {
-  if (!(Test-Path (Join-Path $out $file) -PathType Leaf)) { throw "Missing portable file: $file" }
+  if (!(Test-Path (Join-Path $app $file) -PathType Leaf)) { throw "Missing portable file: $file" }
 }
-Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $out -Force
+# Keep debug symbols out of the end-user package; source builds still generate them.
+Get-ChildItem -LiteralPath $app -Filter '*.pdb' -Recurse -File | Remove-Item -Force
+$docs=Join-Path $app 'docs'
+New-Item -ItemType Directory -Force $docs | Out-Null
+Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $docs -Force
 @'
 Battery Monitor - Rings (Windows 11 x64)
-Extract the complete archive to a writable directory, then run LGSTray.exe.
-The .NET runtime is bundled. No SDK, Windhawk, or mod installation is required.
-Keep LGSTrayHID.exe and the supplied DLLs beside LGSTray.exe.
-Source and license: https://github.com/fhzzzs (modified edition); see MODIFICATIONS.md.
-'@ | Set-Content (Join-Path $out 'START-HERE.txt') -Encoding UTF8
+Extract the complete ZIP, then launch the outer LGSTray.exe.
+Keep the app folder beside the launcher. The .NET 10 desktop runtime and HID worker are bundled.
+Configuration: app\appsettings.toml. User settings/logs: %LOCALAPPDATA%\LGSTray.
+Source and license: see LICENSE and MODIFICATIONS.md in this folder.
+'@ | Set-Content (Join-Path $docs 'START-HERE.txt') -Encoding UTF8
+# Windows 11 includes .NET Framework 4.x. Compile a tiny launcher using its inbox
+# compiler; no duplicate .NET 10 runtime and no C++/Explorer build dependency.
+$csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if(!(Test-Path $csc -PathType Leaf)){throw 'Windows .NET Framework compiler missing.'}
+$entry=Join-Path $out 'LGSTray.exe'
+$icon=Join-Path $PSScriptRoot 'LGSTrayUI\Resources\BatteryMonitor.ico'
+$launcher=Join-Path $PSScriptRoot 'tools\PortableLauncher\Program.cs'
+& $csc /nologo /target:winexe /platform:x64 /optimize+ /debug- "/win32icon:$icon" "/out:$entry" $launcher
+if($LASTEXITCODE -ne 0 -or !(Test-Path $entry -PathType Leaf)){throw 'Portable launcher build failed.'}
+$rootItems=@(Get-ChildItem -LiteralPath $out -Force)
+if($rootItems.Count -ne 2 -or !(Test-Path $app -PathType Container)){throw 'Unexpected portable root layout.'}
+# Launch from a different working directory, verify forwarding and dependency
+# resolution without needing a desktop session or a connected peripheral.
+$probe=Start-Process -FilePath $entry -ArgumentList '--package-check' -WorkingDirectory $env:TEMP -PassThru
+if(!$probe.WaitForExit(35000)){try{$probe.Kill()}catch{};throw 'Portable launcher smoke test timed out.'}
+if($probe.ExitCode -ne 0){throw "Portable launcher smoke test failed: $($probe.ExitCode)"}
 Compress-Archive -Path "$out\*" -DestinationPath $zip -Force
 Write-Host "Portable package: $zip"
 if(!$NoOpen) { Invoke-Item $out }
