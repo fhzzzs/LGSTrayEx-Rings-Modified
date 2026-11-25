@@ -67,6 +67,25 @@ internal static class ControllerAliasMatcher
             foreach(var old in members)inferred.Remove(old);
             inferred.Add(root);
         }else if(g7.Length==1&&!c.ControllerHistoryHints.ContainsKey(g7Hint))c.ControllerHistoryHints[g7Hint]=g7[0].Key;
+        // One matching model per transport is a reversible hypothesis, not
+        // serial proof. Do not match multiple units or conflicting identities.
+        foreach(var family in raw.Where(d=>d.Type==DeviceType.Gamepad&&ControllerInputBattery.Supports(d.HardwareVendorId,d.HardwareProductId)).GroupBy(d=>(d.HardwareVendorId,d.HardwareProductId))){
+            var native=family.Where(d=>d.Key.StartsWith("controller-hid:",StringComparison.Ordinal)).ToArray();
+            var windows=family.Where(IsGip).ToArray();
+            string modelHint=$"native-model:{family.Key.HardwareVendorId:X4}:{family.Key.HardwareProductId:X4}";
+            if(native.Count(d=>d.IsConnected)>1||windows.Count(d=>d.IsConnected)>1)c.ControllerHistoryHints[modelHint]="ambiguous";
+            if(native.Length!=1||windows.Length!=1||c.ControllerHistoryHints.GetValueOrDefault(modelHint)=="ambiguous")continue;
+            var a=native[0];var b=windows[0];
+            // Never infer an association solely because an old record has
+            // the same model as a newly seen connected unit.
+            bool together=a.IsConnected&&b.IsConnected;
+            if(!together&&c.ControllerHistoryHints.GetValueOrDefault(a.Key)!=b.Key)continue;
+            if(roots[a.Key]!=a.Key||roots[b.Key]!=b.Key||c.SeparateDeviceSources.Contains(a.Key)||c.SeparateDeviceSources.Contains(b.Key)||c.DeviceAliases.ContainsKey(a.Key)||c.DeviceAliases.ContainsKey(b.Key))continue;
+            if(!string.IsNullOrEmpty(a.PhysicalId)&&!string.IsNullOrEmpty(b.PhysicalId)&&a.PhysicalId!=b.PhysicalId)continue;
+            string root=c.PhysicalSourceIds.ContainsKey(b.Key)?b.Key:a.Key;
+            roots[a.Key]=root;roots[b.Key]=root;inferred.Add(root);
+            if(together)c.ControllerHistoryHints[a.Key]=b.Key;
+        }
         // A unique Microsoft WGI controller and a unique connected Xbox BLE
         // identity can provisionally share one display. VID is not a serial;
         // never guess when multiple candidates exist or explicit links conflict.

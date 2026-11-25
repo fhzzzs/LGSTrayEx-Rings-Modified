@@ -8,7 +8,7 @@ internal sealed record SourceReading(TaskbarBattery Row,ConnectionState Connecti
 {
     internal static SourceReading Normalize(TaskbarBattery row,DateTimeOffset now,RingPreferences preferences)
     {
-        var ttl=row.Key.StartsWith("gip:")||row.Key.StartsWith("xinput:")?TimeSpan.FromSeconds(Math.Max(15,Math.Clamp(preferences.PollSeconds,.5,60)*3)):
+        var ttl=row.Key.StartsWith("controller-hid:")?TimeSpan.FromSeconds(35):row.Key.StartsWith("gip:")||row.Key.StartsWith("xinput:")?TimeSpan.FromSeconds(Math.Max(15,Math.Clamp(preferences.PollSeconds,.5,60)*3)):
             row.Key.StartsWith("ble:")?TimeSpan.FromSeconds(Math.Max(60,Math.Clamp(preferences.BleSeconds,5,120)*3)):
             (row.Key.StartsWith("asus:")||row.Key.StartsWith("astro:"))?TimeSpan.FromSeconds(90):TimeSpan.FromMinutes(20);
         var until=row.Updated==DateTimeOffset.MinValue?DateTimeOffset.MinValue:row.Updated+ttl;

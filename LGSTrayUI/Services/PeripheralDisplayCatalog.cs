@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Net.Http;
 using LGSTrayPrimitives;
 namespace LGSTrayUI;
 
@@ -40,8 +42,28 @@ internal static class PeripheralDisplayCatalog
         try{return File.Exists(PathName)?Parse(Read(PathName)):new(StringComparer.OrdinalIgnoreCase);}
         catch(Exception ex){DiagnosticLogger.LogWarning("Display catalog: "+ex.Message);return new(StringComparer.OrdinalIgnoreCase);}
     }
-    internal static int Import(string file){
-        string json=Read(file);var parsed=Parse(json);
+    private const string OfficialUrl="https://raw.githubusercontent.com/fhzzzs/LGSTrayEx-Rings-Modified/main/device-display-catalog.json";
+    internal static async Task<string> DownloadOfficialAsync(CancellationToken token){
+        using var client=new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(15)};
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Battery-Monitor-Catalog");
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        using var response=await client.GetAsync(OfficialUrl,HttpCompletionOption.ResponseHeadersRead,deadline.Token);
+        response.EnsureSuccessStatusCode();
+        if(response.Content.Headers.ContentLength>MaxBytes)throw new FormatException("Catalog too large");
+        using var stream=await response.Content.ReadAsStreamAsync(deadline.Token);
+        using var content=new MemoryStream();byte[] buffer=new byte[8192];
+        while(true){
+            int n=await stream.ReadAsync(buffer.AsMemory(),deadline.Token);if(n==0)break;
+            if(content.Length+n>MaxBytes)throw new FormatException("Catalog too large");
+            content.Write(buffer,0,n);
+        }
+        string json=new System.Text.UTF8Encoding(false,true).GetString(content.ToArray());
+        Parse(json);return json;
+    }
+    internal static int Import(string file)=>Install(Read(file));
+    internal static int Install(string json){
+        var parsed=Parse(json);
         RingSettingsStore.WriteAtomic(PathName,json);Volatile.Write(ref entries,parsed);return parsed.Count;
     }
 }

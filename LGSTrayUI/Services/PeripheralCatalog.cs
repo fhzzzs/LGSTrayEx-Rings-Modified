@@ -8,7 +8,7 @@ namespace LGSTrayUI;
 // Protocol facts referenced in docs/DEVICE-COMPATIBILITY.md. A catalog entry
 // allows only a specific, read-only status command on the specified transport.
 internal enum AsusProtocol { DirectMouse, OmniMouse, OmniKeyboard, SpeednovaMouse, StrixGoHeadset, DirectKeyboard, DirectHeadset }
-internal sealed record AsusProfile(ushort Pid,string Name,DeviceType Type,AsusProtocol Protocol,int BatteryByte=5,int Scale=1);
+internal sealed record AsusProfile(ushort Pid,string Name,DeviceType Type,AsusProtocol Protocol,int BatteryByte=5,int Scale=1,int InterfaceNumber=0);
 internal static class PeripheralCatalog
 {
     internal const string Revision="2.0.0";
@@ -67,7 +67,11 @@ internal static class PeripheralCatalog
         rows.Add(new(0x1AFA,"ROG Delta II",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
         rows.Add(new(0x1D41,"ROG Delta II KJP",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
         rows.Add(new(0x1B84,"ROG Pelta",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
-        // Cetra's L/R/case fields require a separate component-aware parser.
+        rows.Add(new(0x1AD3,"ROG Cetra SpeedNova",DeviceType.Headset,AsusProtocol.DirectHeadset,6));
+        rows.Add(new(0x1A24,"ASUS Mouse MD200",DeviceType.Mouse,AsusProtocol.DirectMouse,4,1,2));
+        rows.Add(new(0x1CD3,"ASUS ProArt Mouse MD301",DeviceType.Mouse,AsusProtocol.DirectMouse,4,1,3));
+        rows.Add(new(0x18A0,"ROG Gladius II Wireless",DeviceType.Mouse,AsusProtocol.DirectMouse,4,25,2));
+        rows.Add(new(0x18B4,"ROG Strix Carry",DeviceType.Mouse,AsusProtocol.DirectMouse,6,25,1));
         return rows.ToArray();
     }
     internal static IReadOnlyList<AsusProfile> Asus=>asus;

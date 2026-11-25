@@ -1,4 +1,5 @@
 using LGSTrayHID.Lifecycle;
+using LGSTrayHID.Protocol;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
 
@@ -115,6 +116,7 @@ public class DeviceAnnouncementHandler
         {
             DiagnosticLogger.Log($"[Device {deviceIdx}] Calling CreateDevice...");
             device = _lifecycleManager.CreateDevice(deviceIdx);
+            device.LegacyAnnouncement=LegacyBatteryRegister.Announcement(buffer);
             DiagnosticLogger.Log($"[Device {deviceIdx}] CreateDevice completed, calling NotifyDeviceOn...");
 
             device.NotifyDeviceOn(); // Set device ON timestamp

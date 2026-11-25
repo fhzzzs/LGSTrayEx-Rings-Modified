@@ -49,3 +49,6 @@ Stages 1.1–1.5 developed without intermediate branch builds: protocol allowlis
 
 ## 2.0.0 completion checkpoint (unbuilt)
 Additional ASTRO A50 Gen 5 and ASUS direct keyboard/headset adapters; scoped HID fallback identity, managed hotplug queue, exact register matching, Centurion SOC validation, battery freshness, shell probe backoff, offline cleanup, local display catalog. See COMPLETION-CHECKLIST.md for open items. Version remains 2.0.0.
+
+## 2.0.0 completion checkpoint 2 (unbuilt)
+Passive native Sony/Nintendo/8BitDo report readers; scoped legacy 0x0D fallback; expanded ASUS profiles and Cetra components; WGI placeholder validation; confirmed-history retention; data-only online catalog and independent provider switches. Refer to COMPLETION-CHECKLIST.md. No version bump or Windows validation.

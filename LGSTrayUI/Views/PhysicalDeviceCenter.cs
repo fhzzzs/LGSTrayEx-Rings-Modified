@@ -39,6 +39,11 @@ internal sealed class PhysicalDeviceCenter
         }
         foreach(var key in Inventory.Keys.Where(k=>!current.ContainsKey(k)).ToArray())
             Inventory[key]=Inventory[key] with{Level=null,Charging=false,Status="离线",ShortLabel=null};
+        // Only expire a missing, old source when another currently live
+        // source has exactly the same physical evidence. No model-only cleanup.
+        foreach(var key in ConfirmedHistoryRetention.Expired(Inventory.Values,current,c,DateTimeOffset.UtcNow)){
+            Inventory.Remove(key);changed=true;
+        }
         var previousControllerHints=new Dictionary<string,string>(c.ControllerHistoryHints);
         var previousSourceEvidence=new Dictionary<string,string>(c.PhysicalSourceEvidence);
         var previousIds=new Dictionary<string,string>(c.PhysicalSourceIds);var previousEvidence=new Dictionary<string,string>(c.PhysicalEvidenceIds);

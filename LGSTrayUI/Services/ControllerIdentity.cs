@@ -10,12 +10,16 @@ internal static class ControllerIdentity
     internal static string? KnownName(ushort vid,ushort pid)=>(vid,pid) switch{
         (0x3537,0x10A9)=>"GameSir G7 Pro",
         (0x054C,0x0CE6)=>"Sony DualSense",
-        (0x054C,0x05C4) or (0x054C,0x09CC)=>"Sony DualShock 4",
+        (0x054C,0x0DF2)=>"Sony DualSense Edge",
+        (0x054C,0x05C4) or (0x054C,0x09CC) or (0x054C,0x05C5)=>"Sony DualShock 4",
         (0x057E,0x2006)=>"Nintendo Joy-Con (L)",
         (0x057E,0x2007)=>"Nintendo Joy-Con (R)",
         (0x057E,0x2009)=>"Nintendo Switch Pro Controller",
         (0x2DC8,0x3820)=>"8BitDo N30 Pro",
-        (0x2DC8,0x6003)=>"8BitDo Pro 2",
+        (0x2DC8,0x6003) or (0x2DC8,0x6006)=>"8BitDo Pro 2",
+        (0x2DC8,0x6009)=>"8BitDo Pro 3",
+        (0x2DC8,0x6000) or (0x2DC8,0x6100)=>"8BitDo SF30 Pro",
+        (0x2DC8,0x6001) or (0x2DC8,0x6101)=>"8BitDo SN30 Pro",
         _=>null
     };
     internal static string Name(ushort vid,ushort pid,string fallback)=>KnownName(vid,pid)??Clean(fallback);

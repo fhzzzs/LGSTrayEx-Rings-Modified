@@ -51,6 +51,19 @@ internal sealed class DiagnosticsPanel:StackPanel
             try{int count=PeripheralDisplayCatalog.Import(dialog.FileName);status.Text=$"已导入 {count} 个名称分类，下次扫描生效。不会新增未知 HID 指令。";}
             catch(Exception ex){status.Text="目录导入失败："+ex.Message;}
         }));
+        var downloadCatalog=Action("在线更新设备名称目录",()=>{});
+        downloadCatalog.Click+=async(_,_)=>{
+            downloadCatalog.IsEnabled=false;
+            try{
+                status.Text="正在从项目官方仓库读取名称目录…";
+                string json=await PeripheralDisplayCatalog.DownloadOfficialAsync(System.Threading.CancellationToken.None);
+                int count=PeripheralDisplayCatalog.Parse(json).Count;
+                if(MessageBox.Show(Window.GetWindow(this),$"官方目录包含 {count} 个名称分类。确认替换当前独立名称目录？不会变更 HID 协议或发送指令。","更新名称目录",MessageBoxButton.YesNo)!=MessageBoxResult.Yes){status.Text="已取消更新";return;}
+                PeripheralDisplayCatalog.Install(json);status.Text=$"已更新 {count} 个名称分类，下次扫描生效。";
+            }catch(Exception ex){status.Text="在线目录更新失败："+ex.Message;}
+            finally{downloadCatalog.IsEnabled=true;}
+        };
+        actions.Children.Add(downloadCatalog);
         actions.Children.Add(Action("查看协议目录",()=>{
             var text=string.Join(Environment.NewLine,System.Linq.Enumerable.Select(PeripheralCatalog.Asus,p=>$"{p.Pid:X4} · {p.Name} · {p.Protocol}"));
             var window=new Window{Title="Battery Monitor · 兼容性目录",Width=650,Height=580,Owner=Window.GetWindow(this),WindowStartupLocation=WindowStartupLocation.CenterOwner,

@@ -88,11 +88,11 @@ internal static class AsusBatteryReader
         if(reply==null||reply.Length<11||reply[0]!=3||reply[1]!=0x12||reply[2]!=0x07)return null;
         return DecodeMouse(reply[1..],1);
     }
-    internal static (int Level,bool Charging)? DecodeMouse(byte[]? reply,int scale){
-        if(reply==null||scale is not (1 or 25))return null;
+    internal static (int Level,bool Charging)? DecodeMouse(byte[]? reply,int scale,int batteryOffset=4){
+        if(reply==null||scale is not (1 or 25)||batteryOffset is not (4 or 6))return null;
         int i=reply.Length>0&&reply[0]==0?1:0;
         if(reply.Length<i+10||reply[i]!=0x12||reply[i+1]!=0x07)return null;
-        int raw=reply[i+4],charge=reply[i+9];
+        int raw=reply[i+batteryOffset],charge=reply[i+9];
         if(charge>1||raw>100/scale||(raw==0&&charge==0))return null;
         return(raw*scale,charge==1);
     }
@@ -116,10 +116,25 @@ internal static class AsusBatteryReader
         bool charging=charge[5]==1;int level=battery[6];
         return level==0&&!charging?null:(level,charging);
     }
-    private static (int Level,bool Charging)? DirectHeadset(string path,CancellationToken token){
+    internal static (int Left,int Right,int? Case,bool Charging)? DecodeCetra(byte[]? battery,byte[]? charge){
+        if(battery==null||battery.Length<9||battery[0]!=0xCC||battery[1]!=0x12||battery[2]!=7||battery[6]>100||battery[7]>100)return null;
+        if(charge==null||charge.Length<6||charge[0]!=0xCC||charge[1]!=0x12||charge[2]!=8)return null;
+        bool charging=(charge[5]&3)!=0;
+        // A silent receiver can return zeros; do not publish a phantom 0%.
+        if(battery[6]==0&&battery[7]==0&&!charging)return null;
+        return(battery[6],battery[7],battery[8]<=100?battery[8]:null,charging);
+    }
+    private static (int Level,bool Charging)? DirectHeadset(string path,CancellationToken token,AsusProfile profile,List<string> notes){
         var battery=Exchange(path,0xCC,0x12,7,token);
         if(battery==null)return null;
-        return DecodeDirectHeadset(battery,Exchange(path,0xCC,0x12,8,token));
+        var charge=Exchange(path,0xCC,0x12,8,token);
+        if(profile.Pid==0x1AD3){
+            if(DecodeCetra(battery,charge) is not { } parts)return null;
+            notes.Add($"Cetra components: L={parts.Left}% R={parts.Right}% case={parts.Case?.ToString()??"unknown"}%");
+            // Aggregate display is the weaker earbud, never the case.
+            return(Math.Min(parts.Left,parts.Right),parts.Charging);
+        }
+        return DecodeDirectHeadset(battery,charge);
     }
     internal static (int Level,bool Charging)? DecodeHeadset(byte[]? reply){
         if(reply==null||reply.Length<13||reply[0]!=0xFF||reply[1]!=0x1B)return null;
@@ -197,6 +212,43 @@ internal static class AsusBatteryReader
         }finally{if(head!=0)hid_free_enumeration(head);}
         return rows;
     }
+    internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token){
+        var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);
+        foreach(ushort vid in new ushort[]{0x054C,0x057E,0x2DC8}){
+            var head=hid_enumerate(vid,0);
+            try{
+                for(var p=head;p!=0;){
+                    token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
+                    if(!ControllerInputBattery.Supports(d.Vid,d.Pid)||d.UsagePage!=1||d.Usage is not (4 or 5))continue;
+                    var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
+                    var h=hid_open_path(path);if(h==0)continue;
+                    try{
+                        Guid id=Guid.Empty;
+                        try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}catch(EntryPointNotFoundException){}
+                        string identity=id==Guid.Empty?path:id.ToString("N");
+                        string key=$"controller-hid:{d.Vid:X4}:{d.Pid:X4}:{identity}";
+                        if(seen.Contains(key))continue;
+                        byte[] buffer=new byte[128];
+                        for(int i=0;i<3;i++){
+                            token.ThrowIfCancellationRequested();
+                            int n=hid_read_timeout(h,buffer,(nuint)buffer.Length,120);
+                            if(n<=0)break;
+                            bool? bluetooth=d.Bus==2?true:d.Bus==1?false:
+                                path.Contains("vid&",StringComparison.OrdinalIgnoreCase)||path.Contains("{00001124-0000-1000-8000-00805f9b34fb}",StringComparison.OrdinalIgnoreCase)?true:
+                                path.Contains("vid_",StringComparison.OrdinalIgnoreCase)?false:null;
+                            if(d.Vid==0x054C&&bluetooth==null)continue;
+                            if(ControllerInputBattery.Decode(d.Vid,d.Pid,buffer,n,bluetooth) is not { } sample)continue;
+                            var name=ControllerIdentity.KnownName(d.Vid,d.Pid)!;
+                            bool estimated=d.Vid!=0x2DC8;
+                            rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,sample.Level,sample.Full?"已充满":sample.Charging?"充电中":"已连接",sample.Charging,DateTimeOffset.UtcNow,key,estimated?$"≈{sample.Level}%":null){Estimated=estimated,HardwareVendorId=d.Vid,HardwareProductId=d.Pid});
+                            seen.Add(key);break;
+                        }
+                    }finally{hid_close(h);}
+                }
+            }finally{if(head!=0)hid_free_enumeration(head);}
+        }
+        return rows;
+    }
     internal static IReadOnlyList<TaskbarBattery> Read()=>Read(CancellationToken.None);
     internal static IReadOnlyList<TaskbarBattery> Read(CancellationToken token){
         var result=new List<TaskbarBattery>();var channels=new List<Channel>();var notes=new List<string>();
@@ -209,7 +261,7 @@ internal static class AsusBatteryReader
                 var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
                 var product=d.Product==0?"":Marshal.PtrToStringUni(d.Product)??"";
                 bool candidate=d.Pid==0x1ACE&&IsOmniChannel(d.Interface,d.UsagePage,d.Usage)||
-                    PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectMouse)!=null&&d.Interface==0&&d.UsagePage>=0xFF00||
+                    PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectMouse) is { } mouseProfile&&d.Interface==mouseProfile.InterfaceNumber&&d.UsagePage>=0xFF00||
                     PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectKeyboard)!=null&&d.UsagePage==0xFF00||
                     PeripheralCatalog.Find(d.Pid,AsusProtocol.DirectHeadset)!=null&&d.UsagePage==0xFF00||
                     d.Pid==0x1C69&&d.Interface==0&&d.UsagePage>=0xFF00||
@@ -263,10 +315,10 @@ internal static class AsusBatteryReader
                     reading=profile.Protocol switch{
                         AsusProtocol.StrixGoHeadset=>Headset(channel.Path,token),
                         AsusProtocol.DirectKeyboard=>DecodeDirectKeyboard(Exchange(channel.Path,0,0x12,1,token,65),profile.BatteryByte),
-                        AsusProtocol.DirectHeadset=>DirectHeadset(channel.Path,token),
+                        AsusProtocol.DirectHeadset=>DirectHeadset(channel.Path,token,profile,notes),
                         AsusProtocol.SpeednovaMouse when c.Pid==0x1AD0=>Decode(Exchange(channel.Path,3,0x12,7,token)),
                         AsusProtocol.SpeednovaMouse=>DecodeMouse(Exchange(channel.Path,0,0x12,7,token,64),1),
-                        _=>DecodeMouse(Exchange(channel.Path,0,0x12,7,token,65),profile.Scale)
+                        _=>DecodeMouse(Exchange(channel.Path,0,0x12,7,token,65),profile.Scale,profile.BatteryByte)
                     };
                 }catch(OperationCanceledException){throw;}catch(Exception ex){notes.Add(profile.Name+": "+ex.GetType().Name);}
                 if(reading.HasValue)break;

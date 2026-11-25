@@ -16,8 +16,7 @@ pairing, firmware, drivers or Armoury Crate settings.
   Windows Gaming Input on compatible controllers.
 - **Discovery only or pending:** any unknown VID/PID/firmware or shared receiver
   with no reliable model identity; older HID++ 1.0-only devices not handled by
-  the inherited transport; other ASTRO-specific wireless protocols; ROG Cetra,
-  unsupported direct keyboards/receivers and unverified shared
+  the inherited transport; other ASTRO-specific wireless protocols; unsupported direct keyboards/receivers and unverified shared
   SPEEDNOVA variants; model-specific Sony, Nintendo, 8BitDo and GameSir
   proprietary battery reports when standard Windows reports are unavailable.
 
@@ -89,3 +88,24 @@ Battery Monitor architecture. No external vendor app or executable is bundled.
 - https://github.com/HeyOkay/HaloBattery/blob/main/providers/astro.py — A50 base-station protocol facts
 - https://github.com/seerge/g-helper/tree/main/app/Peripherals/Keyboard/Models — direct keyboard IDs and battery offsets
 - https://github.com/seerge/g-helper/tree/main/app/Peripherals/Headset/Models — Delta II/Pelta
+
+## Second 2.0.0 completion checkpoint — unbuilt
+
+- Legacy Logitech HID++ 1.0: for a recognized online receiver announcement with mouse/keyboard type and WPID, a valid 0x0D register read permits a scoped fallback device to initialize. Capacity is accepted only for documented discharging/full states. The 0x07 coarse status register and older receiver metadata discovery still need implementation; this is not complete HID++ 1.0 coverage.
+- Passive Sony DualSense/Edge/DualShock 4, Nintendo Switch Pro/Joy-Con, and selected 8BitDo D-input full reports: no feature-report trigger, USB handshake, output report, or mode change is sent. Bluetooth basic mode may have no battery reading. Sony Bluetooth CRC is validated; Sony/Nintendo values are estimates; 8BitDo enhanced reports carry percent and charging. Windows zero-padded reports are not interpreted as zero percent. The Switch 2-specific controllers and proprietary GameSir/8BitDo variants are not established by these adapters.
+- WGI 1000/1000 mWh without a charge rate is treated as an ambiguous placeholder, not proof of 100%. Existing GameSir G7 Pro WGI support remains.
+- Direct ASUS MD200, ProArt MD301, Gladius II Wireless and Strix Carry have explicit interface/offset profiles. Cetra SpeedNova reports both earbuds and optional case in diagnostics; the aggregate is the lower earbud, not the case.
+- A confirmed older source can be removed from inventory after 30 days only when another currently live source has the same exact physical evidence, and the old source is absent and has no explicit customization. Ambiguous and manually linked records remain.
+- Separate ASUS, ASTRO and passive controller provider toggles assist coexistence testing. Raw controller hotplug events request a coalesced scan.
+- The independent display catalog can be fetched explicitly from the project's fixed HTTPS URL after the file reaches main, with a size limit, schema validation and confirmation before install. It is data-only and cannot add protocol commands or merge physical identities. Independent protocol updates are still pending.
+
+Protocol facts consulted (implementations not hardware certified in this fork):
+- https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c
+- https://github.com/torvalds/linux/blob/master/drivers/hid/hid-nintendo.c
+- https://github.com/torvalds/linux/blob/master/drivers/hid/hid-logitech-hidpp.c
+- https://github.com/pwr-Solaar/Solaar/blob/master/lib/logitech_receiver/hidpp10.py
+- https://github.com/pwr-Solaar/Solaar/blob/master/lib/logitech_receiver/receiver.py
+- https://github.com/HeyOkay/HaloBattery/blob/main/providers/eightbitdo.py
+- https://github.com/HeyOkay/HaloBattery/blob/main/providers/playstation.py
+- https://github.com/HeyOkay/HaloBattery/blob/main/providers/nintendo.py
+- https://github.com/HeyOkay/HaloBattery/blob/main/providers/wgi.py

@@ -12,6 +12,8 @@ internal static class GipBatteryReader
         if(full is not int f||remaining is not int r||f<=0||r<0||r>f)return null;
         return (int)Math.Round(100d*r/f);
     }
+    internal static int? ReportPercent(int? full,int? remaining,int? rate)
+        =>full==1000&&remaining==1000&&rate==null?null:CapacityPercent(full,remaining);
     private static string diagnostics="not scanned";
     internal static string Diagnostics=>System.Threading.Volatile.Read(ref diagnostics);
     internal static IEnumerable<TaskbarBattery> Read()
@@ -29,14 +31,14 @@ internal static class GipBatteryReader
                 if(ControllerIdentity.RawControllerAllowed(vid,pid)||gamepad==null){
                     try{report=raw.TryGetBatteryReport();}catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} raw error {ex.GetType().Name}");}
                 }
-                int? Level(BatteryReport? r)=>r==null||r.Status==BatteryStatus.NotPresent?null:CapacityPercent(r.FullChargeCapacityInMilliwattHours,r.RemainingCapacityInMilliwattHours);
+                int? Level(BatteryReport? r)=>r==null||r.Status==BatteryStatus.NotPresent?null:ReportPercent(r.FullChargeCapacityInMilliwattHours,r.RemainingCapacityInMilliwattHours,r.ChargeRateInMilliwatts);
                 int? level=Level(report);
                 if(!level.HasValue&&gamepad!=null){
                     try{var fallback=gamepad.TryGetBatteryReport();if(report==null||Level(fallback).HasValue){report=fallback;level=Level(report);route="gamepad";}}
                     catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} gamepad error {ex.GetType().Name}");}
                 }
                 var status=report?.Status==BatteryStatus.Idle&&level==100?"已充满":level.HasValue?"已连接（GIP）":"已连接（GIP 电量不可用）";
-                notes.Add($"{vid:X4}:{pid:X4} {route}: {report?.RemainingCapacityInMilliwattHours}/{report?.FullChargeCapacityInMilliwattHours} mWh; {report?.Status}; level={level?.ToString()??"unknown"}");
+                notes.Add($"{vid:X4}:{pid:X4} {route}: {report?.RemainingCapacityInMilliwattHours}/{report?.FullChargeCapacityInMilliwattHours} mWh; rate={report?.ChargeRateInMilliwatts} mW; {report?.Status}; level={level?.ToString()??"unknown"}");
                 rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,level,status,report?.Status==BatteryStatus.Charging,level.HasValue?DateTimeOffset.UtcNow:DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});
             }catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} {ex.GetType().Name}");rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,null,"已连接（GIP 电量不可用）",false,DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});}
         }

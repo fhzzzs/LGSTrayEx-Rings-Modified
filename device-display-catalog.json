@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "name": "MX Master 3S",
+      "type": "mouse"
+    },
+    {
+      "name": "MX Master 4",
+      "type": "mouse"
+    },
+    {
+      "name": "MX Keys S",
+      "type": "keyboard"
+    },
+    {
+      "name": "MX Anywhere 3S",
+      "type": "mouse"
+    },
+    {
+      "name": "MX Mechanical Mini",
+      "type": "keyboard"
+    },
+    {
+      "name": "Logitech Lift",
+      "type": "mouse"
+    },
+    {
+      "name": "ROG Azoth X",
+      "type": "keyboard"
+    },
+    {
+      "name": "ROG Cetra SpeedNova",
+      "type": "headset"
+    },
+    {
+      "name": "ROG Delta II",
+      "type": "headset"
+    },
+    {
+      "name": "ROG Pelta",
+      "type": "headset"
+    },
+    {
+      "name": "ProArt Mouse MD301",
+      "type": "mouse"
+    },
+    {
+      "name": "ASUS Mouse MD200",
+      "type": "mouse"
+    },
+    {
+      "name": "GameSir G7 Pro",
+      "type": "gamepad"
+    },
+    {
+      "name": "8BitDo Pro 2",
+      "type": "gamepad"
+    },
+    {
+      "name": "DualSense Wireless Controller",
+      "type": "gamepad"
+    },
+    {
+      "name": "Nintendo Switch Pro Controller",
+      "type": "gamepad"
+    }
+  ]
+}

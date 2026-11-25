@@ -21,6 +21,8 @@ public class HidppDevice
 
 
     private IBatteryFeature? _batteryFeature;
+    private bool _legacyRegisterMode;
+    internal (string Model,int Type)? LegacyAnnouncement {get;set;}
     private int _featureReadFailures;
     private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
     private int _consecutivePollFailures = 0;
@@ -109,7 +111,7 @@ public class HidppDevice
             if (!pingSuccess)
             {
                 DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {GlobalSettings.InitBackoff.MaxAttempts} attempts");
-                return;
+                await TryInitLegacyAsync();return;
             }
 
             DiagnosticLogger.Log($"HID device index {DeviceIdx} passed ping test");
@@ -119,7 +121,7 @@ public class HidppDevice
                                            Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET),
                                            backoffStrategy: GlobalSettings.FeatureEnumBackoff,
                                            cancellationToken: _cancellationSource.Token);
-            if(ret.Length<5||ret.IsError()||ret.GetParam(0)==0){DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature set unavailable");return;}
+            if(ret.Length<5||ret.IsError()||ret.GetParam(0)==0){DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature set unavailable");await TryInitLegacyAsync();return;}
             FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
 
             // Get Feature Count
@@ -186,6 +188,26 @@ public class HidppDevice
     /// so a stopped instance never announces itself.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The parent receiver was disposed mid-init.</exception>
+    private async Task TryInitLegacyAsync(){
+        if(LegacyAnnouncement is not { } info||Parent.DevShort==IntPtr.Zero||string.IsNullOrWhiteSpace(Parent.ContainerIdentity))return;
+        // A receiver announcement identifies the slot and peripheral type.
+        // Require a valid read-only battery-register response before publishing.
+        var sample=await ReadLegacyBatteryAsync();
+        if(sample==null)return;
+        _cancellationSource.Token.ThrowIfCancellationRequested();
+        DeviceName="Logitech "+info.Model;
+        DeviceType=info.Type;
+        Identifier=DeviceIdentifierGenerator.GenerateScopedFallback(DeviceName,Parent.ContainerIdentity,DeviceIdx);
+        _legacyRegisterMode=true;
+        HidppManagerContext.Instance.SignalDeviceEvent(IPCMessageType.INIT,new InitMessage(Identifier,DeviceName,true,(DeviceType)DeviceType));
+        IsOnline=true;lastUpdate=DateTimeOffset.Now;
+        _batteryPublisher.PublishUpdate(Identifier,DeviceName,sample.Value,lastUpdate,"legacy-register",true);
+        _pollingTask=Task.Run(()=>PollBattery(_poolingCts.Token),_cancellationSource.Token);
+    }
+    private async Task<BatteryUpdateReturn?> ReadLegacyBatteryAsync(){
+        var reply=await Parent.WriteRead10(Parent.DevShort,LegacyBatteryRegister.Request(DeviceIdx),timeout:500,cancellationToken:_cancellationSource.Token);
+        return LegacyBatteryRegister.DecodeMileage(DeviceIdx,reply);
+    }
     private async Task InitPopulateAsync()
     {
 
@@ -403,6 +425,11 @@ public class HidppDevice
     /// <returns></returns>
     public async Task<bool> UpdateBattery(bool forceIpcUpdate = false)
     {
+        if(_legacyRegisterMode){
+            var sample=await ReadLegacyBatteryAsync();if(sample==null||IsStopped)return false;
+            lastUpdate=DateTimeOffset.Now;
+            _batteryPublisher.PublishUpdate(Identifier,DeviceName,sample.Value,lastUpdate,"legacy-register",forceIpcUpdate);return true;
+        }
         if (_batteryFeature == null)
         {
             DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
