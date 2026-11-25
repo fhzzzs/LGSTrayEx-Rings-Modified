@@ -47,7 +47,7 @@ internal sealed class ReleaseUpdatePanel:StackPanel
             var rollback=new Button{Content="回退到上一版本",Padding=new Thickness(10,5,10,5),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
             rollback.Click+=(_,_)=>Restart(previous);Children.Add(rollback);
         }
-        Children.Add(new TextBlock{Text="更新仅在手动确认后执行。原程序目录保留；个性化设置继续使用原用户数据目录。原生 DLL 更新后可能需要重启 Explorer。",TextWrapping=TextWrapping.Wrap,Opacity=.75,Margin=new Thickness(0,8,0,0)});
+        Children.Add(new TextBlock{Text="更新仅在手动确认后执行。原程序目录保留；个性化设置继续使用原用户数据目录。",TextWrapping=TextWrapping.Wrap,Opacity=.75,Margin=new Thickness(0,8,0,0)});
         Unloaded+=(_,_)=>operation?.Cancel();
     }
     private void Restart(string executable){

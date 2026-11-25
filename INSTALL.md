@@ -7,16 +7,16 @@ Windows 11 x64 is required. The self-contained publication includes the .NET des
 ## Developers (source archive)
 Exit the running old version, extract this archive, double-click `BUILD-RINGS.cmd`. It uses an existing .NET 10 x64 SDK, or installs the SDK in `.sdk-x64` when missing. Network access is required to retrieve missing SDK/NuGet packages. The script publishes both executables and opens `bin/Release/Publish/win-x64/Standalone`. The distributable ZIP is `bin/LGSTrayEx-Rings-Portable-x64.zip`. To run regression tests first, use `BUILD-RINGS.cmd -Test`. GitHub Actions uses the same PowerShell implementation.
 
-Settings remain in the existing local application data directory. The build also detects MSVC x64 and Windows SDK C++/WinRT headers, and offers to install missing C++ build tools via winget. This is a source-build dependency only. The portable archive includes NativeLayout.dll; it uses the Windows XAML Diagnostics interface to load a narrowly scoped provider in Explorer when Left is selected. Actual native occupancy is experimental and must pass geometry validation; if rejected or incompatible, strict mode hides the strip. Optional safe fallback can be enabled in layout settings. See NativeLayout/README.md in the source tree. Restart Explorer to unload a staged native DLL before testing a different provider version.
+Settings remain in the existing local application data directory. The right-side strip uses a verified free gap next to the notification area. If upgrading from a version with an Explorer layout provider, exit it and restart Explorer once (or sign out), then extract this archive into a new folder. Keep the old folder only if needed for rollback.
 
 ## Device identity limits
 Exact matching serials and confirmed physical identifiers can be merged automatically. Unambiguous Logitech HID / G HUB mode-family sources may also be grouped reversibly without a source-count cap, including remembered offline sources, without saving an inferred physical identity. Manual separation overrides model matching. Some providers expose only a model name or temporary slot; the existing G HUB model fallback and native name-hash fallback may be ambiguous. Use manual merge/separate when necessary. Do not treat these fallback IDs as proof that two devices are the same.
 
 ## Verification
-Source/static checks only in the development environment. Windows compilation (including the C++ DLL), standalone launch on a machine without .NET, actual taskbar geometry and hardware detection still require Windows tests. The source archive is not a tested portable build.
+Source/static checks only in the development environment. Windows compilation, standalone launch on a machine without .NET, actual taskbar geometry and hardware detection still require Windows tests. The source archive is not a tested portable build.
 
 ## Version updates
 
 The About page checks formal GitHub Releases tagged `rings-X.Y.Z`. It requires the expected ZIP asset and SHA-256 digest. Verified packages are extracted to a new local version directory; the original executable folder is preserved. The user explicitly confirms restart or rollback. Personalization and device inventory continue to use the existing per-user directory; a custom portable TOML file is not automatically copied into a new release. Re-enable startup from the intended version if the Windows startup path still points to an older folder.
 
-No stable release tag should be created until all automated tests and the interactive native-taskbar acceptance matrix pass. GitHub-hosted build runners validate compilation, not interactive shell placement.
+No stable release tag should be created until all automated tests and the interactive taskbar acceptance matrix pass. GitHub-hosted build runners validate compilation, not interactive shell placement.

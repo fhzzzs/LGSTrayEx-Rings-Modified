@@ -18,7 +18,7 @@ Apple-inspired battery rings · Taskbar display · Multi-device monitoring
 
 LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless mice, headsets, keyboards and game controllers into one compact battery display, with customizable rings, smooth animations and device management.
 
-**Status:** Rings.9 is a development build. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
+**Status:** Rings 10 is a development build. The CI badge reflects automated Windows build results, not physical-device compatibility or live Explorer stability. The current settings interface uses Chinese and English text.
 
 ## Features
 
@@ -27,7 +27,7 @@ LGSTrayEx Rings is an unofficial modification of LGSTrayEx. It brings wireless m
 | Battery rings | Device icons, numeric battery percentages, transparent background and customizable colors |
 | Status | Green at 20% and above, yellow at 10–19%, red below 10%, blue for charging and gray for offline by default |
 | Animations | Battery transitions, charging highlights, lightning indicator, offline fade-out and spring-style repositioning |
-| Layout | Left/right placement, adjustable gaps, DPI-aware sizing and live preview |
+| Layout | Right-side placement, adjustable gaps, DPI-aware sizing and live preview |
 | Devices | Automatic discovery, drag-to-reorder, rename, hide, ignore and manual merge/separate |
 | Identity | Confirmed hardware identity and reversible unique Logitech HID / G HUB model matching, preferred data source and fallback |
 | Notifications | Compact primary-monitor notifications for stable merged-device connection changes; battery thresholds, repeat intervals, per-device rules, sound selection, volume and WAV import |
@@ -79,15 +79,9 @@ GameSir G7 Pro and other specific controllers still need hardware validation. Ba
 
 Automatic device merging is enabled by default. Confirmed hardware identifiers take priority. A unique Logitech HID / G HUB pair with the same canonical model may also be grouped reversibly when there are no conflicting IDs or manual separation rules. Multiple records from either provider prevent inferred matching. Inferred links are not saved as confirmed hardware identity. Remembered offline records preserve grouping during rescan. Manual merge and separate remain available.
 
-## Experimental native taskbar layout
+## Taskbar layout
 
-Rings.9 includes a bundled native provider, `NativeLayout.dll`, intended to reserve space after the Start button when Left is selected. It uses Windows XAML Diagnostics, not Windhawk. Internal Explorer layouts can change between Windows releases.
-
-The provider uses a heartbeat-based reservation lease, attempts to restore modified layout properties, and checks actual screen geometry before showing rings. Incompatible layouts first try a verified left-side gap, then a safe right-side gap, or hide the strip when no safe space exists. Left-side fallback does not move Start or reserve native space. The settings page reports the actual placement.
-
-The target is Windows 11 x64 with a horizontal primary taskbar, including multi-monitor configurations when the primary Start control is verified. Centered mode, DPI, crowded taskbars, Explorer recovery and native placement still require live testing. Test in a disposable VM before using the experimental feature on your main desktop.
-
-See [NativeLayout documentation](NativeLayout/README.md) for limitations and recovery details.
+The ring strip is a WPF overlay in the verified trailing gap before the primary taskbar notification area. If the gap is too small or cannot be verified, the strip hides instead of covering app icons. No Explorer layout changes are performed.
 
 ## Building from source
 
@@ -97,7 +91,7 @@ Only developers need build tools. On Windows x64, run:
 BUILD-RINGS.cmd -Test
 ```
 
-The build detects .NET 10 SDK, MSVC x64 and Windows SDK/C++/WinRT headers. Missing tools may require installation and network access. The same build runs in GitHub Actions.
+The build detects .NET 10 SDK, .NET project dependencies. Missing tools may require installation and network access. The same build runs in GitHub Actions.
 
 Output: `bin/LGSTrayEx-Rings-Portable-x64.zip`
 
@@ -105,9 +99,9 @@ See [installation and build notes](INSTALL.md).
 
 ## Feedback and troubleshooting
 
-Open an [issue](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/issues) with your Windows version, device model, connection mode, build commit, steps to reproduce and relevant screenshots or logs. For layout issues, include taskbar alignment, DPI and the native-layout status shown in Settings. Remove personal information and device identifiers from logs before posting.
+Open an [issue](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/issues) with your Windows version, device model, connection mode, build commit, steps to reproduce and relevant screenshots or logs. For layout issues, include taskbar alignment, DPI and screenshots. Remove personal information and device identifiers from logs before posting.
 
-Settings and diagnostic logs are stored under `%LOCALAPPDATA%\LGSTray`. Windows 10, ARM64 and native multi-monitor taskbar behavior are not yet hardware-validated.
+Settings and diagnostic logs are stored under `%LOCALAPPDATA%\LGSTray`. Windows 10, ARM64 and multi-monitor taskbar behavior are not yet hardware-validated.
 
 ## Credits and license
 
@@ -127,7 +121,7 @@ LGSTrayEx Rings 是一款 Windows 11 无线设备电量监控工具，以圆环�
 - 支持自动发现设备、可靠身份及唯一罗技跨来源型号自动合并、拖拽排序、隐藏及重命名。
 - 支持多档低电量提醒、独立提示音与主题保存。
 - ROG Harpe Ace Mini OMNI 读取在后台自动执行，无须专用设置开关。
-- 内置原生任务栏占位仍为实验性功能；不兼容时回退至安全位置。
+- 仅在主任务栏右侧安全空位显示；空间不足时隐藏。
 
 **下载方式：** 前往 [GitHub Actions](https://github.com/fhzzzs/LGSTrayEx-Rings-Modified/actions/workflows/rings-build.yml)，选择 main 分支成功的构建，下载 Artifacts 中的 rings-portable-x64，完整解压后运行 LGSTray.exe。普通用户不需要安装 .NET SDK、Visual Studio Build Tools 或 Windhawk。
 

@@ -39,39 +39,7 @@ foreach($project in @('LGSTrayHID','LGSTrayUI')) {
   & $dotnet publish "$project\$project.csproj" -c Release -r win-x64 --self-contained true /p:PublishProfile=Standalone /p:Version=$version /p:PublishTrimmed=false /p:PublishSingleFile=true
   if ($LASTEXITCODE -ne 0) { throw "Publish failed: $project" }
 }
-# Native SDK is needed ONLY for a source build. The resulting DLL statically links
-# the C++ runtime, and the portable archive includes it automatically.
-function Find-VcVars {
-  $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-  if (!(Test-Path $vswhere)) { return $null }
-  $path=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-  if (!$path) { return $null }
-  $vc=Join-Path ($path | Select-Object -First 1) 'VC\Auxiliary\Build\vcvars64.bat'
-  $sdk=Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Include'
-  $headers=Get-ChildItem $sdk -Directory -ErrorAction SilentlyContinue | Where-Object {
-    (Test-Path (Join-Path $_.FullName 'um\xamlom.h')) -and
-    (Test-Path (Join-Path $_.FullName 'cppwinrt\winrt\Windows.UI.Xaml.h'))
-  }
-  if ((Test-Path $vc) -and $headers) { return $vc }
-  return $null
-}
-$vcvars=Find-VcVars
-if (!$vcvars) {
-  Write-Host 'Native layout source build needs MSVC x64 and Windows SDK (developer only).'
-  Write-Host 'Portable users do not install any build tools.'
-  if ($env:CI -eq 'true') { throw 'Windows CI image is missing C++/Windows SDK build tools.' }
-  $answer=Read-Host 'Install missing Visual Studio Build Tools via official winget package? (Y/N; several GB)'
-  if ($answer -notmatch '^[Yy]$') { throw 'Native build canceled; no portable archive generated.' }
-  if (!(Get-Command winget.exe -ErrorAction SilentlyContinue)) { throw 'winget is unavailable. Use official Visual Studio Build Tools with Desktop development with C++.' }
-  & winget.exe install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget --accept-source-agreements --accept-package-agreements --override '--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
-  if ($LASTEXITCODE -ne 0) { throw 'C++ build tools installation failed or requires restart.' }
-  $vcvars=Find-VcVars
-  if (!$vcvars) { throw 'Missing C++ or Windows SDK headers after installation.' }
-}
-$nativeCmd=Join-Path $PSScriptRoot 'NativeLayout\BUILD-NATIVE.cmd'
-& $env:ComSpec /d /c "call `"$vcvars`" && call `"$nativeCmd`" `"$out`""
-if ($LASTEXITCODE -ne 0) { throw 'Native layout DLL compilation failed.' }
-foreach($file in @('LGSTray.exe','LGSTrayHID.exe','hidapi.dll','appsettings.toml','NativeLayout.dll')) {
+foreach($file in @('LGSTray.exe','LGSTrayHID.exe','hidapi.dll','appsettings.toml')) {
   if (!(Test-Path (Join-Path $out $file) -PathType Leaf)) { throw "Missing portable file: $file" }
 }
 Copy-Item LICENSE,MODIFICATIONS.md,INSTALL.md -Destination $out -Force
@@ -80,7 +48,6 @@ Battery Monitor - Rings (Windows 11 x64)
 Extract the complete archive to a writable directory, then run LGSTray.exe.
 The .NET runtime is bundled. No SDK, Windhawk, or mod installation is required.
 Keep LGSTrayHID.exe and the supplied DLLs beside LGSTray.exe.
-NativeLayout.dll is experimental. Strict Left placement requires a verified native XAML reservation; safe overlay fallback is optional. See INSTALL.md.
 Source and license: https://github.com/fhzzzs (modified edition); see MODIFICATIONS.md.
 '@ | Set-Content (Join-Path $out 'START-HERE.txt') -Encoding UTF8
 Compress-Archive -Path "$out\*" -DestinationPath $zip -Force

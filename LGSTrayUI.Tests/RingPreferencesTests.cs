@@ -33,14 +33,21 @@ public class RingPreferencesTests
         Assert.Equal("#123456",target.Normal);Assert.Equal(9d,target.Gap);Assert.Equal(1.4,target.Speed);Assert.Equal("#ABCDEF",target.DeviceColors["a"]);Assert.Equal("10:15",target.Rules);Assert.Equal(new[]{"b"},target.Order);Assert.Equal(new[]{"c"},target.Hidden);
     }
     [Fact]
-    public void LeftPlacementFindsFirstAvailableGapRatherThanHidingOnCollision()
+    public void RightPlacementNeverMovesBetweenOrBeforeApps()
     {
         var occupied=new[]{(48,200),(400,500)};
-        Assert.True(LGSTrayUI.TaskbarPlacement.TryGap(48,900,100,16,16,0,true,occupied,out var left));
-        Assert.Equal(216,left);
-        Assert.True(LGSTrayUI.TaskbarPlacement.TryGap(48,900,100,16,16,0,false,occupied,out var right));
+        Assert.True(TaskbarPlacement.TryGap(48,900,100,16,16,0,occupied,out var right));
         Assert.Equal(784,right);
-        Assert.False(LGSTrayUI.TaskbarPlacement.TryGap(48,200,100,16,16,0,true,occupied,out _));
+        Assert.False(TaskbarPlacement.TryGap(48,600,100,16,16,0,occupied,out _));
+    }
+    [Fact]
+    public void RemovedAlignmentSettingsAreIgnoredOnImport()
+    {
+        var p=RingSettingsStore.Parse("{\"Left\":true,\"RequireNativeLeft\":true,\"Gap\":9}");
+        Assert.Equal(9d,p.Gap);
+        var json=System.Text.Json.JsonSerializer.Serialize(p);
+        Assert.DoesNotContain("\"Left\"",json);
+        Assert.DoesNotContain("RequireNativeLeft",json);
     }
     [Fact]
     public void PaletteOverridesAndLightContrastAreIndependentAndThemeCopiesDeeply()

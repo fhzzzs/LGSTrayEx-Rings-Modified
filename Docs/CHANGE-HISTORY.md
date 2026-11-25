@@ -90,3 +90,7 @@ Static archive/XML checks are not a Windows build or runtime test.
 - [ ] Switch Right; exit app; terminate app; disable mod; verify margin restored (lease timeout on app crash).
 - [ ] Explorer restart; reconnect app; verify no persistent layout changes.
 - [ ] Full-screen apps, autohide, crowded taskbar, incompatible mods, and multi-monitor: verify fail-safe/no overlap.
+
+## Rings 10 right-only layout
+
+Historical entries above describe superseded implementations; the current build supports only a collision-checked right-side overlay. See README.md.

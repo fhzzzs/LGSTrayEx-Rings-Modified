@@ -25,15 +25,4 @@ public class RingMotionTests
         Assert.False(RingMotionGeometry.CanInterpolate([42,0],[0,42],38));
         Assert.False(RingMotionGeometry.CanInterpolate([0,20],[0,42],38));
     }
-    [Fact] public void CenteredStartAllowsVerifiedLeadingGap()
-    {
-        Assert.True(TaskbarPlacement.TryLeftFallback(0,900,420,468,24,84,16,16,0,[(420,468),(468,520)],out int x));
-        Assert.Equal(16,x);
-    }
-    [Fact] public void LeftAlignedStartRequiresAdjacentGap()
-    {
-        Assert.False(TaskbarPlacement.TryLeftFallback(0,900,0,48,24,84,16,16,0,[(0,48),(48,100)],out _));
-        Assert.True(TaskbarPlacement.TryLeftFallback(0,900,0,48,24,84,16,16,0,[(0,48),(200,250)],out int x));
-        Assert.Equal(64,x);
-    }
 }

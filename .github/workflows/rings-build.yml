@@ -21,10 +21,6 @@ jobs:
           $version = '10.0.0'
           if ($env:GITHUB_REF -match '^refs/tags/rings-([0-9]+\.[0-9]+\.[0-9]+)$') { $version = $Matches[1] }
           ./BUILD-RINGS.ps1 -NoOpen -Test -RingsVersion $version
-      - shell: pwsh
-        run: |
-          $dll = "bin/Release/Publish/win-x64/Standalone/NativeLayout.dll"
-          if (!(Test-Path $dll)) { throw "NativeLayout.dll missing" }
       - uses: actions/upload-artifact@v4
         with:
           name: rings-portable-x64

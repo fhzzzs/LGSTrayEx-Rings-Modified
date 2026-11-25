@@ -51,7 +51,6 @@ internal sealed class RingStripAnimator : IDisposable
     private readonly System.Diagnostics.Stopwatch moveClock=new();
     private string[] previous=[];
     private bool disposed;
-    private bool? previousLeft;
     private double previousSize;
     private Action? moveFrame;
     internal double Width {get;private set;}
@@ -115,7 +114,7 @@ internal sealed class RingStripAnimator : IDisposable
     internal void Reset(){
         timer.Stop();StopMove();
         foreach(var key in entries.Keys.ToArray())Remove(key);
-        previous=[];previousLeft=null;previousSize=0;Width=0;canvas.Width=0;divider.Visibility=Visibility.Collapsed;
+        previous=[];previousSize=0;Width=0;canvas.Width=0;divider.Visibility=Visibility.Collapsed;
     }
     private void Tick(object? s,EventArgs args)
     {
@@ -144,21 +143,20 @@ internal sealed class RingStripAnimator : IDisposable
         previous=es.Select(e=>e.Data.Key).ToArray();
         double size=Math.Clamp(c.Size,24,52),gap=Math.Clamp(c.Gap,0,20),step=size+gap;
         double target=es.Length==0?0:es.Length*size+(es.Length-1)*gap+(c.Divider?8:0);
-        bool sameAxis=previousLeft==c.Left&&Math.Abs(previousSize-size)<.001;
-        previousLeft=c.Left;previousSize=size;
+        bool sameAxis=Math.Abs(previousSize-size)<.001;
+        previousSize=size;
         Width=Math.Max(Width,target);canvas.Width=Width;canvas.Height=size;
         divider.Visibility=c.Divider&&es.Length>0?Visibility.Visible:Visibility.Collapsed;
         divider.Width=Math.Clamp(c.DividerWidth,.5,4);divider.Height=Math.Clamp(c.DividerHeight,4,size);
         divider.Fill=new SolidColorBrush(RingPreferences.Ink(c.DividerColor));Canvas.SetTop(divider,(size-divider.Height)/2);
-        if(c.Left){Canvas.SetRight(divider,2);divider.ClearValue(Canvas.LeftProperty);}else{Canvas.SetLeft(divider,2);divider.ClearValue(Canvas.RightProperty);}
-        var prop=c.Left?Canvas.LeftProperty:Canvas.RightProperty;
-        var opposite=c.Left?Canvas.RightProperty:Canvas.LeftProperty;
+        Canvas.SetLeft(divider,2);
+        var prop=Canvas.RightProperty;
         var moves=new List<(Entry e,double from,double to)>();
         for(int i=0;i<es.Length;i++){
             var e=es[i];var button=e.Button;
-            double to=(c.Left?i:es.Length-1-i)*step;
+            double to=(es.Length-1-i)*step;
             double from=(double)button.GetValue(prop);
-            button.ClearValue(opposite);button.Width=button.Height=size;
+            button.Width=button.Height=size;
             if(e.Pending||!sameAxis||!double.IsFinite(from))from=to;
             button.SetValue(prop,from);
             if(!e.Pending)moves.Add((e,from,to));

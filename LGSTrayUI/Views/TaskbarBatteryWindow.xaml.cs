@@ -139,7 +139,6 @@ public partial class TaskbarBatteryWindow : Window
         if(_closed)return;
         PollExtraDevices();
         ApplySnapshot(ReadSnapshot());
-        NativeTaskbarSlot.Instance.Update(_animator.Width);
         if (_openMenu?.IsOpen == true) {
             return;
         }
@@ -205,7 +204,6 @@ public partial class TaskbarBatteryWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
-        NativeTaskbarSlot.Instance.Dispose();
         UnregisterHotKey(_handle,1001); HwndSource.FromHwnd(_handle)?.RemoveHook(HotkeyHook);
         RingConfig.Changed -= SettingsChanged; _animator.Dispose(); _settings?.Close(); RingConfig.Flush();
         _scanner.Dispose();

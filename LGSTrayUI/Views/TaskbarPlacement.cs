@@ -26,7 +26,7 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         return TryFit(bounds, notification, info.Monitor, scale, out placement, count);
     }
 
-    // Position the WPF strip only in verified free space, including a native reservation.
+    // Position the WPF strip in verified free space adjacent to the notification area.
     internal static bool TryReadCustom(out TaskbarPlacement placement,double logicalWidth)
     {
         placement=default; if(logicalWidth<=0){return false;}
@@ -42,83 +42,21 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         int offset=(int)Math.Round(Math.Clamp(c.X,-100,100)*scale), y=top+(h-height)/2+(int)Math.Round(Math.Clamp(c.Y,-20,20)*scale);
         if(y<top||y+height>bottom){return false;}
         int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale), end=Math.Min(notify.Left,bounds.Right);
-        var occupied=new List<(int left,int right)>();
-        var nonStart=new List<(int left,int right)>();
-        int? startButtonRight=null, startButtonLeft=null;
-        var slot=NativeTaskbarSlot.Instance;
-        if(!TaskbarAutomationProbe.TryRead(bar,bounds,c.Left?slot.GeometryNotBefore:0,out var controls)){
-            if(c.Left){slot.Verify(false);slot.ReportPlacement("实际位置：等待新鲜的任务栏控件几何数据");}
-            return false;
-        }
-        foreach(var item in controls){
-            var r=item.Rect;if(r.Top>=y+height||r.Bottom<=y)continue;
-            bool isStart=item.IsStart;
-            if(isStart && r.Left>=bounds.Left && r.Right<=end){startButtonRight=(int)Math.Ceiling(r.Right);startButtonLeft=(int)Math.Floor(r.Left);}
-            if(r.Left<end&&r.Right>bounds.Left){var interval=((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right));occupied.Add(interval);if(!isStart)nonStart.Add(interval);}
-        }
+        if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls))return false;
+        var occupied=controls.Where(r=>r.Top<y+height&&r.Bottom>y&&r.Left<end&&r.Right>bounds.Left)
+            .Select(r=>((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right))).ToArray();
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
-        // Prefer the exact Start-adjacent slot if it is already free. Never claim a reserved slot that Explorer did not allocate.
-        var reserve=TaskbarLayoutGeometry.Dimensions(logicalWidth,c.LeftGap,c.RightGap,c.X);
-        if(c.Left && (!c.RequireNativeLeft||NativeTaskbarSlot.Instance.Acknowledged) && startButtonRight is int anchor && startButtonLeft is int leading &&
-           leading<=bounds.Left+(int)Math.Ceiling(24*scale) &&
-           !nonStart.Any(b=>b.right>leading&&b.left<anchor) && reserve.total>0 &&
-           TryReserved(anchor,end,width,(int)Math.Round(reserve.before*scale),(int)Math.Round(reserve.after*scale),occupied,out int nativeX)){
-            NativeTaskbarSlot.Instance.Verify(true);
-            NativeTaskbarSlot.Instance.ReportPlacement(NativeTaskbarSlot.Instance.Acknowledged?"实际位置：原生占位已验证 · 开始按钮右侧":"实际位置：现有开始按钮右侧空位（非原生占位）");
-            placement=new(nativeX,y,width,height,scale);return true;
-        }
-        // Prefer a real, independently verified left-edge gap even when the native
-        // reservation is unavailable. Never claim the Start button has been moved.
-        if(c.Left){
-            NativeTaskbarSlot.Instance.Verify(false);
-            if(c.RequireNativeLeft){NativeTaskbarSlot.Instance.ReportPlacement("实际位置：等待验证的原生占位；未启用悬浮回退");return false;}
-            if(startButtonLeft is int sl && startButtonRight is int sr &&
-               TryLeftFallback(Math.Max(bounds.Left,info.Monitor.Left),end,sl,sr,(int)Math.Ceiling(24*scale),width,leftGap,rightGap,offset,occupied,out int lx)){
-                NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左侧安全空位（非原生占位）");
-                placement=new(lx,y,width,height,scale);return true;
-            }
-            // Some Windows versions expose a different Start automation identifier.
-            // Only use a left-side gap when actual controls were observed; reserve the
-            // first conventional Start-width area if the Start button is unidentified.
-            int edge=Math.Max(bounds.Left,info.Monitor.Left);
-            int leftLimit=Math.Min(end,edge+(bounds.Right-edge)/2);
-            if(occupied.Count>0&&TryGap(startButtonLeft.HasValue?edge:start,leftLimit,width,leftGap,rightGap,offset,true,occupied,out int safeLeft)){
-                NativeTaskbarSlot.Instance.ReportPlacement("实际位置：左半区域安全空位（非原生占位）");
-                placement=new(safeLeft,y,width,height,scale);return true;
-            }
-        }
-        if(!TryGap(start,end,width,leftGap,rightGap,offset,false,occupied,out int x)){
-            if(c.Left)NativeTaskbarSlot.Instance.ReportPlacement("实际位置：无安全空位，暂时隐藏");
-            return false;
-        }
-        if(c.Left)NativeTaskbarSlot.Instance.ReportPlacement("实际位置：右侧回退（左侧空间不足）");
+        if(!TryGap(start,end,width,leftGap,rightGap,offset,occupied,out int x))return false;
         placement=new(x,y,width,height,scale);return true;
     }
-    internal static bool TryLeftFallback(int edge,int end,int startLeft,int startRight,int edgeTolerance,int width,int leftGap,int rightGap,int offset,IEnumerable<(int left,int right)> occupied,out int x){
-        x=0;
-        if(startLeft<edge||startRight<=startLeft||startRight>end)return false;
-        var intervals=occupied.ToArray();
-        // Centered Start: use the leading free space, never overlap the centered buttons.
-        if(startLeft>edge+edgeTolerance)
-            return TryGap(edge,startLeft,width,leftGap,rightGap,offset,true,intervals,out x);
-        // Left-aligned Start: only use the adjacent free slot, not a remote right-hand gap.
-        int next=intervals.Where(i=>i.right>startRight).Select(i=>Math.Max(startRight,i.left)).DefaultIfEmpty(end).Min();
-        return TryGap(startRight,Math.Min(end,next),width,leftGap,rightGap,offset,true,intervals,out x);
-    }
-    internal static bool TryReserved(int anchor,int end,int width,int before,int after,IEnumerable<(int left,int right)> occupied,out int x){
-        x=0;if(width<=0||before<0||after<0)return false;
-        long l=(long)anchor+before,r=l+width;
-        if(r+after>end||l<int.MinValue||r>int.MaxValue)return false;
-        // Verify both the ring strip and its requested trailing padding, excluding the Start button itself.
-        if(occupied.Any(b=>b.right>anchor&&b.left<r+after))return false;
-        x=(int)l;return true;
-    }
-    // Find the first/last safe gap. This cannot reserve space in Explorer.
-    internal static bool TryGap(int start,int end,int width,int leftGap,int rightGap,int offset,bool left,IEnumerable<(int left,int right)> occupied,out int x){
-        x=0;var gaps=new List<(int l,int r)>();int cursor=start;
-        foreach(var item in occupied.OrderBy(r=>r.left)){int l=Math.Max(start,item.left),r=Math.Min(end,item.right);if(r<=cursor||l>=end)continue;if(l>cursor)gaps.Add((cursor,l));cursor=Math.Max(cursor,r);}
-        if(cursor<end)gaps.Add((cursor,end));
-        foreach(var g in left?gaps.AsEnumerable():gaps.AsEnumerable().Reverse()){int lo=g.l+leftGap,hi=g.r-rightGap-width;if(lo>hi)continue;x=Math.Clamp((left?lo:hi)+offset,lo,hi);return true;}return false;
+    // Use only the trailing free gap; never jump to the leading side or between apps.
+    internal static bool TryGap(int start,int end,int width,int leftGap,int rightGap,int offset,IEnumerable<(int left,int right)> occupied,out int x){
+        x=0;if(width<=0||start>=end||leftGap<0||rightGap<0)return false;
+        int cursor=start;
+        foreach(var item in occupied){if(item.right>start&&item.left<end)cursor=Math.Max(cursor,Math.Min(item.right,end));}
+        int lo=cursor+leftGap,hi=end-rightGap-width;
+        if(lo>hi)return false;
+        x=Math.Clamp(hi+offset,lo,hi);return true;
     }
     internal static bool TryFit(PixelRect bar, PixelRect tray, PixelRect screen, double scale,
                                 out TaskbarPlacement placement, int count = 2)

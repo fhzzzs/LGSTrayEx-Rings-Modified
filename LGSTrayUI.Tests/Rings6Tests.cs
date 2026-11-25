@@ -29,11 +29,10 @@ public class Rings6Tests
         Assert.Equal("My mouse",c.Names[a.Key]);Assert.Equal("#123456",c.DeviceColors[a.Key]);
         DeviceIdentityManager.Split(c,merged);Assert.Equal(2,DeviceIdentityManager.Group([a,b],c).Length);
     }
-    [Fact] public void LayoutGapRespectsBothMarginsAndAlignment()
+    [Fact] public void RightGapRespectsBothMargins()
     {
         (int left,int right)[] apps=[(370,510)];
-        Assert.True(TaskbarPlacement.TryGap(48,784,164,16,16,0,true,apps,out int left));Assert.Equal(64,left);
-        Assert.True(TaskbarPlacement.TryGap(48,784,164,16,16,0,false,apps,out int right));Assert.Equal(604,right);
-        Assert.False(TaskbarPlacement.TryGap(48,784,740,16,16,0,false,apps,out _));
+        Assert.True(TaskbarPlacement.TryGap(48,784,164,16,16,0,apps,out int right));Assert.Equal(604,right);
+        Assert.False(TaskbarPlacement.TryGap(48,784,740,16,16,0,apps,out _));
     }
 }
