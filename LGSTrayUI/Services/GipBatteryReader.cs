@@ -20,6 +20,21 @@ internal static class GipBatteryReader
     private static string lastGameSir="No GameSir WGI reports captured in this session";
     internal static string LastGameSir=>System.Threading.Volatile.Read(ref lastGameSir);
     internal static string Diagnostics=>System.Threading.Volatile.Read(ref diagnostics);
+    internal const string SessionPrefix = "gip:wgi-session:";
+    private static readonly object scanGate = new();
+    private static Dictionary<RawGameController,(string Key,string? Issue)> previousIdentities = new();
+
+    internal static string ControllerKey(Func<string?> readId, Func<string> session, out string? issue)
+    {
+        try {
+            string id = ControllerIdentity.Clean(readId());
+            if (!string.IsNullOrWhiteSpace(id)) { issue = null; return "gip:" + id; }
+            issue = "NonRoamableId empty";
+        } catch (Exception ex) {
+            issue = $"NonRoamableId HRESULT 0x{ex.HResult:X8}";
+        }
+        return SessionPrefix + session();
+    }
     internal static Task<IReadOnlyList<TaskbarBattery>> ReadAsync(bool nativeTelemetry, CancellationToken token) =>
         Task.Run<IReadOnlyList<TaskbarBattery>>(async () => {
             var rows = Read(nativeTelemetry);
@@ -28,12 +43,30 @@ internal static class GipBatteryReader
         }, token);
     internal static List<TaskbarBattery> Read(bool nativeTelemetry = false)
     {
+        lock (scanGate) return ReadSnapshot(nativeTelemetry);
+    }
+    private static List<TaskbarBattery> ReadSnapshot(bool nativeTelemetry)
+    {
         var rows=new List<TaskbarBattery>();var notes=new List<string>();var seen=new HashSet<string>(StringComparer.Ordinal);
+        // A projected RawGameController compares by its WinRT object identity.
+        // Holding live projections also prevents an address being reused across scans.
+        var identities = new Dictionary<RawGameController,(string Key,string? Issue)>();
         void Add(RawGameController raw,Gamepad? gamepad){
-            var id=ControllerIdentity.Clean(raw.NonRoamableId??"");
-            if(string.IsNullOrWhiteSpace(id)||!seen.Add(id))return;
-            var key="gip:"+id;ushort vid=raw.HardwareVendorId,pid=raw.HardwareProductId;
-            string name=ControllerIdentity.Name(vid,pid,raw.DisplayName);
+            ushort vid=raw.HardwareVendorId,pid=raw.HardwareProductId;
+            if (identities.ContainsKey(raw)) return;
+            if (!previousIdentities.TryGetValue(raw, out var identity)) {
+                string resolved = ControllerKey(() => raw.NonRoamableId, () => Guid.NewGuid().ToString("N"), out var issue);
+                identity = (resolved, issue);
+            }
+            identities.Add(raw, identity);
+            string key = identity.Key;
+            if (!seen.Add(key)) return;
+            if (identity.Issue != null) notes.Add($"{vid:X4}:{pid:X4} {identity.Issue}; using connection identity");
+            string? name = ControllerIdentity.KnownName(vid,pid);
+            if (name == null) {
+                try { name = ControllerIdentity.Clean(raw.DisplayName); }
+                catch (Exception ex) { name = "Game controller"; notes.Add($"{vid:X4}:{pid:X4} display name HRESULT 0x{ex.HResult:X8}"); }
+            }
             try{
                 // Keep the original Gamepad API available even when the newer Raw API
                 // returns a value. Raw and Gamepad are observations of the same controller.
@@ -78,14 +111,23 @@ internal static class GipBatteryReader
             }catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} {ex.GetType().Name}");rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,null,"已连接（GIP 电量不可用）",false,DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});}
         }
         try{
-            foreach(var controller in Gamepad.Gamepads){
-                try{var raw=RawGameController.FromGameController(controller);if(raw!=null)Add(raw,controller);}
-                catch(Exception ex){DiagnosticLogger.LogWarning("GIP controller discovery: "+ex.Message);}
-            }
+            bool enumeratedGamepads = false;
+            try {
+                foreach(var controller in Gamepad.Gamepads){
+                    try{var raw=RawGameController.FromGameController(controller);if(raw!=null)Add(raw,controller);}
+                    catch(Exception ex){notes.Add($"Gamepad discovery HRESULT 0x{ex.HResult:X8}");}
+                }
+                enumeratedGamepads = true;
+            } catch(Exception ex) { notes.Add($"Gamepad list HRESULT 0x{ex.HResult:X8}"); }
             // Only add raw-only devices with known controller VID/PID.
             // Do not misclassify arbitrary raw joysticks, mice or vendor interfaces.
-            foreach(var raw in RawGameController.RawGameControllers)
-                if(ControllerIdentity.RawControllerAllowed(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null);
+            try {
+                foreach(var raw in RawGameController.RawGameControllers) {
+                    try { if(ControllerIdentity.RawControllerAllowed(raw.HardwareVendorId,raw.HardwareProductId))Add(raw,null); }
+                    catch(Exception ex) { notes.Add($"Raw controller discovery HRESULT 0x{ex.HResult:X8}"); }
+                }
+            } catch(Exception ex) when (enumeratedGamepads || rows.Count > 0) { notes.Add($"Raw controller list HRESULT 0x{ex.HResult:X8}"); }
+            previousIdentities = identities;
         }catch(Exception ex){DiagnosticLogger.LogWarning("GIP: "+ex.Message);throw;}
         finally{
             var gameSir=notes.FindAll(n=>n.StartsWith("3537:",StringComparison.Ordinal));

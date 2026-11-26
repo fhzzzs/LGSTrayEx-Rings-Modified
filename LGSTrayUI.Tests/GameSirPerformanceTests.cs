@@ -62,6 +62,32 @@ public class GameSirPerformanceTests{
         Assert.Equal(73,GameSirFastBattery.PublishedPercent((byte)73));
         Assert.Equal(0,GameSirFastBattery.PublishedPercent((byte)0));
     }
+    [Fact]
+    public void WindowsIdFailureStillProducesAConnectedControllerKey()
+    {
+        string key = GipBatteryReader.ControllerKey(() => throw new ArgumentException(), () => "pad1", out var problem);
+        Assert.Equal("gip:wgi-session:pad1", key);
+        Assert.Contains("80070057", problem);
+        string second = GipBatteryReader.ControllerKey(() => "\0", () => "pad2", out _);
+        Assert.NotEqual(key, second);
+        string saved = GipBatteryReader.ControllerKey(() => "saved\0", () => throw new InvalidOperationException(), out var ok);
+        Assert.Null(ok);
+        Assert.Equal("gip:saved", saved);
+    }
+    [Fact]
+    public void ConfirmedContainerStabilizesFallbackAcrossConnectionsAndPreservesExistingKeys()
+    {
+        var first = new TaskbarBattery(DeviceType.Gamepad, "GameSir G7 Pro", null, "已连接", false, DateTimeOffset.MinValue, "gip:wgi-session:a");
+        var reconnected = first with { Key = "gip:wgi-session:b" };
+        var container = Guid.NewGuid();
+        var result = GameSirFastBattery.WithContainer(first, container);
+        Assert.Equal(result.Key, GameSirFastBattery.WithContainer(reconnected, container).Key);
+        Assert.NotEqual(result.Key, GameSirFastBattery.WithContainer(first, Guid.NewGuid()).Key);
+        Assert.Equal("ON", result.RingLabel);
+        Assert.Equal(first, GameSirFastBattery.WithContainer(first, null));
+        var legacy = first with { Key = "gip:saved" };
+        Assert.Equal(legacy, GameSirFastBattery.WithContainer(legacy, container));
+    }
     [Theory]
     [InlineData(0x3537,0x10A9,false)]
     [InlineData(0x3537,0x10A8,true)]

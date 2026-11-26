@@ -130,10 +130,13 @@ The previous optional Cyclone 2 active status query is withdrawn after a user re
 Windows hardware check on November 25, 2026: with the G7 Pro off its dock, the
 1000 Hz receiver enumerated as 3537:10A9 / Xbox 360 Controller. Both WGI views
 reported 1000/1000 mWh without a charge rate. XInput reported wired, level 3.
-The vendor HID collection FFF0:0040 was present. No battery property was
-observed on the inspected USB/HID device nodes. An exact percentage in this
-mode is still unverified. Battery Monitor preserves the active transport and
-polling rate throughout discovery.
+Windows also rejected RawGameController.NonRoamableId with HRESULT 0x80070057.
+Battery Monitor now continues the scan, associates this receiver with its
+unique Windows device container and shows ON. Repeated live samples found the
+FFF0:0040 vendor collection and nine present device nodes. None supplied a
+battery percentage and no valid passive battery frame was observed. An exact
+percentage in this mode is still unverified. Discovery preserves the active
+transport and polling rate.
 
 GameSir: the published configuration telemetry format has report ID 0x10, markers 0x3C and 0xE0, charging byte 32 and battery byte 33. An opt-in passive decoder accepts only valid complete frames on vendor collections. 3537:10A9 remains an unverified fast-mode target; the open-source reference documents no response to configuration requests in that mode. The scanner never sends a GameSir query or switches polling rate. Cyclone 2 retains its separate 0x12 parser and no-write policy. Dedicated HID interface/report-length diagnostics and the last online GameSir WGI snapshot remain visible after disconnect. No privileged telemetry service is installed. References: https://github.com/broroeror/gamesir-linux-tools/blob/main/vendors/gamesir/models/g7pro/protocol.py ; https://github.com/broroeror/gamesir-linux-tools/issues/17 ; https://github.com/iStarTAC/PadForge-G7Pro-SDL-Launcher .
 
