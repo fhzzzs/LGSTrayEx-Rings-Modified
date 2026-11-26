@@ -51,6 +51,7 @@ public partial class TaskbarBatteryWindow : Window
         _animator = new RingStripAnimator(RingItems, CreateRingButton, UpdatePlacement){PlacementReady=()=>_placementReady};
         RingConfig.AreasChanged += SettingsChanged;
         _handle = new WindowInteropHelper(this).EnsureHandle();
+        _scanner.AttachGameSirInput(HwndSource.FromHwnd(_handle)!);
         TaskbarPlacement.MakeToolWindow(_handle);
         HwndSource.FromHwnd(_handle)?.AddHook(HotkeyHook); RegisterHotKey(_handle,1001,0x4003,0x42);
         _tray.LogiDevices.CollectionChanged += DevicesChanged;

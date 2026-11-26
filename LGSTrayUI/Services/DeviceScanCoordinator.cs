@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using LGSTrayPrimitives;
 using Windows.Gaming.Input;
 
@@ -15,6 +16,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
 {
     private readonly Dispatcher dispatcher;
     private readonly ProviderScheduler scheduler;
+    private readonly GameSirPassiveInput gameSir = new();
     private bool disposed,eventsSubscribed,rawEventsSubscribed;
     private int gamepadRescanQueued;
     internal event Action? Changed;
@@ -24,7 +26,6 @@ internal sealed class DeviceScanCoordinator:IDisposable
     internal DeviceScanCoordinator(Dispatcher dispatcher)
     {
         this.dispatcher=dispatcher;
-        GameSirGipTelemetry.Instance.Enable(RingConfig.Current.UseGip && RingConfig.Current.GameSirPassiveEnabled);
         scheduler=new ProviderScheduler(new IBatteryProvider[]{
             new BatteryProvider("ble",c=>c.UseBle,c=>TimeSpan.FromSeconds(Math.Clamp(c.BleSeconds,5,120)),TimeSpan.FromSeconds(25),BluetoothBatteryReader.ReadAsync),
             new BatteryProvider("gip",c=>c.UseGip,c=>TimeSpan.FromSeconds(Math.Clamp(c.PollSeconds,.5,60)),TimeSpan.FromSeconds(5),t=>GipBatteryReader.ReadAsync(RingConfig.Current.GameSirPassiveEnabled,t)),
@@ -32,7 +33,7 @@ internal sealed class DeviceScanCoordinator:IDisposable
             new BatteryProvider("asus",c=>c.AsusHidEnabled,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(30),t=>Worker(()=>AsusBatteryReader.Read(t),t)),
             new BatteryProvider("astro",c=>c.UseAstro,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadAstro(t),t)),
             new BatteryProvider("controller-hid",c=>c.UseControllerHid,c=>TimeSpan.FromSeconds(10),TimeSpan.FromSeconds(15),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t),t)),
-            new BatteryProvider("gamesir-hid",c=>c.UseControllerHid&&c.GameSirPassiveEnabled,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(10),t=>Worker(()=>AsusBatteryReader.ReadControllerInput(t,true),t))
+            new BatteryProvider("gamesir-hid",c=>c.UseControllerHid&&c.GameSirPassiveEnabled,c=>TimeSpan.FromSeconds(15),TimeSpan.FromSeconds(10),t=>Task.Run(()=>gameSir.Read(t),t))
         },dispatcher,()=>Changed?.Invoke());
         try{Gamepad.GamepadAdded+=GamepadChanged;try{Gamepad.GamepadRemoved+=GamepadChanged;eventsSubscribed=true;}catch{Gamepad.GamepadAdded-=GamepadChanged;}}
         catch(Exception ex){DiagnosticLogger.LogWarning("Gamepad change registration: "+ex.Message);}
@@ -47,9 +48,11 @@ internal sealed class DeviceScanCoordinator:IDisposable
         if(dispatcher.HasShutdownStarted||Interlocked.Exchange(ref gamepadRescanQueued,1)!=0)return;
         dispatcher.BeginInvoke(new Action(()=>{Interlocked.Exchange(ref gamepadRescanQueued,0);if(disposed)return;scheduler.RescanMany("gip","xinput","controller-hid","gamesir-hid");}));
     }
-    internal void Suspend(){if(!disposed){GameSirGipTelemetry.Instance.Enable(false);scheduler.Suspend();}}
-    internal void Resume(){if(!disposed){GameSirFastBattery.Invalidate();GameSirGipTelemetry.Instance.Enable(RingConfig.Current.UseGip && RingConfig.Current.GameSirPassiveEnabled);scheduler.Resume();}}
+    internal void AttachGameSirInput(HwndSource window){gameSir.Attach(window);ApplyGameSirSettings();RingDiagnostics.GameSirInputStatus=()=>gameSir.Diagnostics;}
+    private void ApplyGameSirSettings(){var c=RingConfig.Current;GameSirGipTelemetry.Instance.Enable(c.UseGip&&c.GameSirPassiveEnabled);gameSir.Enable(c.UseControllerHid&&c.GameSirPassiveEnabled);}
+    internal void Suspend(){if(!disposed){GameSirGipTelemetry.Instance.Enable(false);gameSir.Enable(false);scheduler.Suspend();}}
+    internal void Resume(){if(!disposed){GameSirFastBattery.Invalidate();ApplyGameSirSettings();scheduler.Resume();}}
     internal void RequestRescan(){if(!disposed)scheduler.Rescan();}
-    internal void Poll(DateTimeOffset now){if(!disposed){GameSirGipTelemetry.Instance.Enable(RingConfig.Current.UseGip && RingConfig.Current.GameSirPassiveEnabled);scheduler.Poll();}}
-    public void Dispose(){if(disposed)return;disposed=true;if(eventsSubscribed){try{Gamepad.GamepadAdded-=GamepadChanged;Gamepad.GamepadRemoved-=GamepadChanged;}catch{}}if(rawEventsSubscribed){try{RawGameController.RawGameControllerAdded-=RawGamepadChanged;RawGameController.RawGameControllerRemoved-=RawGamepadChanged;}catch{}}GameSirGipTelemetry.Instance.Enable(false);scheduler.Dispose();}
+    internal void Poll(DateTimeOffset now){if(!disposed){ApplyGameSirSettings();scheduler.Poll();}}
+    public void Dispose(){if(disposed)return;disposed=true;if(eventsSubscribed){try{Gamepad.GamepadAdded-=GamepadChanged;Gamepad.GamepadRemoved-=GamepadChanged;}catch{}}if(rawEventsSubscribed){try{RawGameController.RawGameControllerAdded-=RawGamepadChanged;RawGameController.RawGameControllerRemoved-=RawGamepadChanged;}catch{}}GameSirGipTelemetry.Instance.Enable(false);RingDiagnostics.GameSirInputStatus=null;gameSir.Dispose();scheduler.Dispose();}
 }

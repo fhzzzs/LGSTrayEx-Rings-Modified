@@ -22,18 +22,7 @@ internal static class ControllerInputBattery
     }
     internal static (int Level,bool Charging,bool Full)? Decode(ushort vid,ushort pid,byte[] data,int count,bool? bluetooth=null){
         if(!Supports(vid,pid)||count<=0||count>data.Length)return null;
-        if(vid==0x3537){
-            // G7 configuration telemetry only if a complete matching frame is already available.
-            // 10A9 does not answer configuration requests; no request is sent.
-            if(ControllerIdentity.IsG7(vid,pid)){
-                if(count<61||data[0]!=0x10||data[3]!=0x3C||data[4]!=0xE0||data[32]>1||data[33]>100)return null;
-                return(data[33],data[32]==1,data[33]==100&&data[32]==0);
-            }
-            // Cyclone 2 vendor state report; never apply to G7 Pro modes.
-            if(count<37||data[0]!=0x12||(data[1]|data[2]|data[3]|data[4])==0||data[36]>100||data[35]>2)return null;
-            if(data[35]==2&&data[36]!=100)return null;
-            return(data[36],data[35]==1,data[35]==2);
-        }
+        if(vid==0x3537)return DecodeGameSir(pid,data.AsSpan(0,count));
         if(vid==0x2DC8){
             // Only existing enhanced reports. Feature report 0x06 would
             // switch controller mode and may break DirectInput; never send it.
@@ -65,5 +54,18 @@ internal static class ControllerInputBattery
         if(charging&&band==11)return(100,false,true);
         if(band>10)return null;
         return(Math.Min(100,band*10+5),charging,false);
+    }
+
+    internal static (int Level,bool Charging,bool Full)? DecodeGameSir(ushort pid, ReadOnlySpan<byte> data)
+    {
+        if (ControllerIdentity.IsG7(0x3537,pid)) {
+            if (data.Length < 64 || data[0] != 0x10 || data[3] != 0x3C || data[4] != 0xE0 ||
+                data[32] > 1 || data[33] > 100) return null;
+            return (data[33], data[32] == 1, data[33] == 100 && data[32] == 0);
+        }
+        if (!ControllerIdentity.IsCyclone2(0x3537,pid) || data.Length < 37 || data[0] != 0x12 ||
+            (data[1] | data[2] | data[3] | data[4]) == 0 || data[36] > 100 || data[35] > 2 ||
+            (data[35] == 2 && data[36] != 100)) return null;
+        return (data[36], data[35] == 1, data[35] == 2);
     }
 }

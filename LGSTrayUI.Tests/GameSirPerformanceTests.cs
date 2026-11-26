@@ -69,4 +69,17 @@ public class GameSirPerformanceTests{
     [InlineData(0x045E,0x10A9,false)]
     public void NativeGipSubscriptionIsLimitedToG7GipIdentities(int vid,int pid,bool expected)
         =>Assert.Equal(expected,ControllerIdentity.CanListenForGip((ushort)vid,(ushort)pid));
+    [Fact]
+    public void AQuietLiveCycloneCollectionAgesWithoutFakingAnUnplug()
+    {
+        var now=DateTimeOffset.UnixEpoch;
+        var row=new TaskbarBattery(DeviceType.Gamepad,"Cyclone 2",55,"充电中",true,now,"controller-hid:3537:100B:test");
+        Assert.Equal(row,GameSirPassiveInput.WhilePresent(row,now.AddSeconds(35)));
+        var aged=GameSirPassiveInput.WhilePresent(row,now.AddSeconds(36));
+        Assert.True(aged.IsConnected);
+        Assert.True(aged.Stale);
+        Assert.False(aged.IsActivelyCharging);
+        Assert.Null(aged.Level);
+        Assert.Equal(55,aged.LastKnownLevel);
+    }
 }

@@ -214,7 +214,7 @@ internal static class AsusBatteryReader
     }
     private static string gameSirDiagnostics="Not scanned; experimental passive reader disabled by default";
     internal static string GameSirDiagnostics=>Volatile.Read(ref gameSirDiagnostics);
-    internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirOnly=false){
+    internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirOnly=false,Dictionary<string,string>? present=null){
         var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);var notes=new List<string>();
         foreach(ushort vid in gameSirOnly?new ushort[]{0x3537}:new ushort[]{0x054C,0x057E,0x2DC8}){
             var head=hid_enumerate(vid,0);
@@ -224,12 +224,17 @@ internal static class AsusBatteryReader
                     if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Vid:X4}:{d.Pid:X4} mi={d.Interface} page={d.UsagePage:X4}:{d.Usage:X4}");
                     if(!ControllerInputBattery.Supports(d.Vid,d.Pid)||(d.Vid==0x3537?(ControllerIdentity.IsG7(d.Vid,d.Pid)?d.UsagePage<0xFF00:d.UsagePage!=0xFFF0):d.UsagePage!=1||d.Usage is not (4 or 5)))continue;
                     var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
-                    var h=hid_open_path(path);if(h==0)continue;
+                    var h=hid_open_path(path);
+                    if(h==0){
+                        if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Pid:X4} vendor collection open failed");
+                        continue;
+                    }
                     try{
                         Guid id=Guid.Empty;
                         try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}catch(EntryPointNotFoundException){}
                         string identity=id==Guid.Empty?path:id.ToString("N");
                         string key=$"controller-hid:{d.Vid:X4}:{d.Pid:X4}:{identity}";
+                        if(present!=null)present[path]=key;
                         if(seen.Contains(key))continue;
                         byte[] buffer=new byte[128];
                         // Passive only: never write a GameSir heartbeat or configuration report.

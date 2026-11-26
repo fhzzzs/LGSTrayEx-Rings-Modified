@@ -22,6 +22,7 @@ internal static class RingDiagnostics
     internal static void Provider(ProviderDiagnostic value)=>providers[value.Id]=value;
     private static readonly BatteryHistory history=new(256);
     internal static string HardwareInventory {get;set;}="Not collected; use hardware discovery in diagnostics.";
+    internal static Func<string>? GameSirInputStatus { get; set; }
     internal static void Observe(DeviceGroup[] snapshot){
         bool membershipChanged=groups.Length!=snapshot.Length;
         if(!membershipChanged)for(int i=0;i<groups.Length;i++)if(groups[i].Reading.Key!=snapshot[i].Reading.Key){membershipChanged=true;break;}
@@ -60,6 +61,7 @@ internal static class RingDiagnostics
         b.AppendLine("  G7 Pro 1000 Hz (last online): "+GameSirFastBattery.LastOnline);
         b.AppendLine("  XInput slots (last online): "+XInputBatteryReader.LastOnline);
         b.AppendLine("  GameSir passive HID: "+AsusBatteryReader.GameSirDiagnostics);
+        b.AppendLine("  GameSir vendor input: "+GameSirInputStatus?.Invoke());
         b.AppendLine();b.AppendLine("Hardware discovery (on demand):");b.AppendLine(HardwareInventory);
         b.AppendLine();b.AppendLine("Logical devices:");
         foreach(var g in groups){
