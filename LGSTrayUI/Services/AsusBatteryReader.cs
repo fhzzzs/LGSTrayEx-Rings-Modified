@@ -188,6 +188,7 @@ internal static class AsusBatteryReader
     internal static IReadOnlyList<TaskbarBattery> ReadAstro(CancellationToken token){
         var rows=new List<TaskbarBattery>();var head=hid_enumerate(0x046D,0x0B1C);
         var seen=new HashSet<string>(StringComparer.Ordinal);
+        byte[]? scanReply=null;
         try{
             for(var p=head;p!=0;){
                 token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
@@ -198,7 +199,7 @@ internal static class AsusBatteryReader
                     Guid id=Guid.Empty;
                     try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}catch(EntryPointNotFoundException){}
                     string identity=id==Guid.Empty?path:id.ToString("N");if(!seen.Add(identity))continue;
-                    byte echo=(byte)((uint)Interlocked.Increment(ref astroToken)%255+1);var request=AstroRequest(echo);var reply=new byte[64];
+                    byte echo=(byte)((uint)Interlocked.Increment(ref astroToken)%255+1);var request=AstroRequest(echo);var reply=scanReply??=new byte[64];Array.Clear(reply);
                     for(int i=0;i<8;i++)if(hid_read_timeout(h,reply,(nuint)reply.Length,0)<=0)break;
                     if(hid_write(h,request,(nuint)request.Length)<0)continue;
                     for(int i=0;i<8;i++){
@@ -216,7 +217,10 @@ internal static class AsusBatteryReader
     internal static string GameSirDiagnostics=>Volatile.Read(ref gameSirDiagnostics);
     internal static IReadOnlyList<TaskbarBattery> ReadControllerInput(CancellationToken token,bool gameSirOnly=false,Dictionary<string,string>? present=null){
         var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);var notes=new List<string>();
-        foreach(ushort vid in gameSirOnly?new ushort[]{0x3537}:new ushort[]{0x054C,0x057E,0x2DC8}){
+        // One buffer per scan, never shared between concurrent providers.
+        byte[]? scanBuffer=null;
+        ReadOnlySpan<ushort> vendors=gameSirOnly?[0x3537]:[0x054C,0x057E,0x2DC8];
+        foreach(ushort vid in vendors){
             var head=hid_enumerate(vid,0);
             try{
                 for(var p=head;p!=0;){
@@ -236,16 +240,17 @@ internal static class AsusBatteryReader
                         string key=$"controller-hid:{d.Vid:X4}:{d.Pid:X4}:{identity}";
                         if(present!=null)present[path]=key;
                         if(seen.Contains(key))continue;
-                        byte[] buffer=new byte[128];
+                        var buffer=scanBuffer??=new byte[128];
+                        Array.Clear(buffer); // retain the zero-initialized state of each new collection
+                        bool? bluetooth=d.Bus==2?true:d.Bus==1?false:
+                            path.Contains("vid&",StringComparison.OrdinalIgnoreCase)||path.Contains("{00001124-0000-1000-8000-00805f9b34fb}",StringComparison.OrdinalIgnoreCase)?true:
+                            path.Contains("vid_",StringComparison.OrdinalIgnoreCase)?false:null;
                         // Passive only: never write a GameSir heartbeat or configuration report.
                         for(int i=0;i<3;i++){
                             token.ThrowIfCancellationRequested();
                             int n=hid_read_timeout(h,buffer,(nuint)buffer.Length,120);
                             if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Pid:X4} read length={n}"+(n>0?$" report={buffer[0]:X2}":""));
                             if(n<=0)break;
-                            bool? bluetooth=d.Bus==2?true:d.Bus==1?false:
-                                path.Contains("vid&",StringComparison.OrdinalIgnoreCase)||path.Contains("{00001124-0000-1000-8000-00805f9b34fb}",StringComparison.OrdinalIgnoreCase)?true:
-                                path.Contains("vid_",StringComparison.OrdinalIgnoreCase)?false:null;
                             if(d.Vid==0x054C&&bluetooth==null)continue;
                             if(ControllerInputBattery.Decode(d.Vid,d.Pid,buffer,n,bluetooth) is not { } sample)continue;
                             var name=ControllerIdentity.KnownName(d.Vid,d.Pid)!;
