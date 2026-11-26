@@ -207,6 +207,15 @@ internal sealed class RingStripAnimator : IDisposable
     // and all existing visible rings have completed their movement.
     internal void ConfirmPlacement(){
         if(disposed||moveFrame!=null||!(PlacementReady?.Invoke()??true))return;
+        // Shell placement is checked repeatedly after every ring is already visible.
+        foreach (var entry in entries.Values) {
+            if (entry.Pending && !entry.Leaving) {
+                RevealPending();
+                return;
+            }
+        }
+    }
+    private void RevealPending(){
         var c=RingConfig.Current;int index=0;
         foreach(var e in Sorted().Where(e=>e.Pending&&!e.Leaving)){
             e.Pending=false;int gen=++e.Generation;
