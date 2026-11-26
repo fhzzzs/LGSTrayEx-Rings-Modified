@@ -50,4 +50,11 @@ public class RuntimeFeedbackTests{
         Assert.False(TaskbarAutomationProbe.Fresh(1501,0,50));
         Assert.InRange(TaskbarAutomationProbe.CaptureIntervalMs,900,1200);
     }
+    [Fact]
+    public void ReorderingVisibleDevicesPreservesSlotsForAbsentDevicesAcrossRestart()
+    {
+        var c=new RingPreferences{Order=["mouse","away","pad"]};
+        c.Order=DeviceOrder.MergeDrag(c.Order,["pad","mouse","new"]);
+        Assert.Equal(new[]{"pad","away","mouse","new"},RingSettingsStore.Parse(RingSettingsStore.Snapshot(c)).Order);
+    }
 }
