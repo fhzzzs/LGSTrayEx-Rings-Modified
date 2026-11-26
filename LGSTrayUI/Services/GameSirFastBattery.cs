@@ -52,7 +52,7 @@ internal static class GameSirFastBattery
     }
 
     private static bool IsFastController(TaskbarBattery row) =>
-        row.IsConnected && row.HardwareVendorId == 0x3537 && row.HardwareProductId == 0x10A9;
+        row.IsConnected && ControllerIdentity.IsG7FastReceiver(row.HardwareVendorId,row.HardwareProductId);
 
     private static async Task<(int? Percent, string Detail)> InspectAsync(CancellationToken token)
     {

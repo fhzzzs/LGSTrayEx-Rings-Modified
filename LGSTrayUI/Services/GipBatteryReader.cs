@@ -59,7 +59,7 @@ internal static class GipBatteryReader
                 string? band = null;
                 var updated = level.HasValue ? DateTimeOffset.UtcNow : DateTimeOffset.MinValue;
                 if (ControllerIdentity.IsG7(vid,pid) && !level.HasValue) {
-                    if (pid == 0x10A9) {
+                    if (ControllerIdentity.IsG7FastReceiver(vid,pid)) {
                         status = "1000 Hz 接收器已连接，未取得实时电量";
                         notes.Add("3537:10A9 XUSB fast mode; Windows capacity unavailable or synthetic; polling rate untouched");
                     } else if (nativeTelemetry) {

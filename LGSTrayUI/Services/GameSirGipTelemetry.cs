@@ -41,7 +41,7 @@ internal sealed class GameSirGipTelemetry : ICustomGameControllerFactory
     internal Sample? Read(RawGameController raw, out string detail)
     {
         var pid = raw.HardwareProductId;
-        if (!ControllerIdentity.IsG7(raw.HardwareVendorId, pid) || pid == 0x10A9) {
+        if (!ControllerIdentity.CanListenForGip(raw.HardwareVendorId, pid)) {
             detail = "XUSB fast mode"; return null;
         }
         // Register only on demand and once per product. Registration can call

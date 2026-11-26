@@ -62,4 +62,11 @@ public class GameSirPerformanceTests{
         Assert.Equal(73,GameSirFastBattery.PublishedPercent((byte)73));
         Assert.Equal(0,GameSirFastBattery.PublishedPercent((byte)0));
     }
+    [Theory]
+    [InlineData(0x3537,0x10A9,false)]
+    [InlineData(0x3537,0x10A8,true)]
+    [InlineData(0x3537,0x100B,false)]
+    [InlineData(0x045E,0x10A9,false)]
+    public void NativeGipSubscriptionIsLimitedToG7GipIdentities(int vid,int pid,bool expected)
+        =>Assert.Equal(expected,ControllerIdentity.CanListenForGip((ushort)vid,(ushort)pid));
 }

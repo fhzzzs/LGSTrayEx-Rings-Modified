@@ -7,6 +7,8 @@ internal static class ControllerIdentity
     internal static string Clean(string? value)=>(value??"").Replace("\0","");
     internal static bool IsG7(ushort vid,ushort pid)=>vid==0x3537&&pid is 0x10A7 or 0x10A8 or 0x10A9 or 0x109B or 0x109C or 0x10BA or 0x10BB or 0x1003 or 0x105D or 0x105E or 0x106A or 0x106B;
     internal static bool IsCyclone2(ushort vid,ushort pid)=>vid==0x3537&&pid is 0x100B or 0x102A or 0x101D or 0x1053;
+    internal static bool IsG7FastReceiver(ushort vid,ushort pid)=>vid==0x3537&&pid==0x10A9;
+    internal static bool CanListenForGip(ushort vid,ushort pid)=>IsG7(vid,pid)&&!IsG7FastReceiver(vid,pid);
     internal static bool IsG7(TaskbarBattery d)=>ControllerAliasMatcher.IsGip(d)&&IsG7(d.HardwareVendorId,d.HardwareProductId);
     internal static string? KnownName(ushort vid,ushort pid)=>(vid,pid) switch{
         (0x3537,_) when IsG7(vid,pid)=>"GameSir G7 Pro",
