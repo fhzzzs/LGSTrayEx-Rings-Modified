@@ -24,6 +24,14 @@ internal static class TaskbarAutomationProbe
     private static long captures,cacheHits,rejected,totalMs;
     private static long occupiedCapture=-1;
     [ThreadStatic] private static OrCondition? controlsCondition;
+    [ThreadStatic] private static CacheRequest? controlsRequest;
+    private static CacheRequest CreateControlsRequest()
+    {
+        var request=new CacheRequest{TreeScope=TreeScope.Element,AutomationElementMode=AutomationElementMode.None};
+        request.Add(AutomationElement.BoundingRectangleProperty);
+        request.Add(AutomationElement.IsOffscreenProperty);
+        return request;
+    }
     internal static string Metrics=>$"captures={Interlocked.Read(ref captures)} cache hits={Interlocked.Read(ref cacheHits)} rejected={Interlocked.Read(ref rejected)} total capture ms={Interlocked.Read(ref totalMs)}";
     internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
     internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
@@ -70,8 +78,8 @@ internal static class TaskbarAutomationProbe
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.MenuItem),
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.CheckBox));
             var root=AutomationElement.FromHandle(bar);
-            var request=new CacheRequest{TreeScope=TreeScope.Element,AutomationElementMode=AutomationElementMode.None};
-            foreach(var p in new[]{AutomationElement.BoundingRectangleProperty,AutomationElement.IsOffscreenProperty})request.Add(p);
+            // CacheRequest activation is thread-local; reuse only on the same worker.
+            var request=controlsRequest??=CreateControlsRequest();
             var result=new HashSet<Rect>();
             using(request.Activate()){
                 foreach(AutomationElement item in root.FindAll(TreeScope.Descendants,condition)){
