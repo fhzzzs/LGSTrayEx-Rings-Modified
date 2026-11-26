@@ -20,6 +20,35 @@ public class TaskbarBatteryTests
         Assert.All(rows, row => Assert.Equal("Off", row.Percent));
     }
 
+    [Fact]
+    public void SourceSelectionMatchesOriginalStableGroupingAndRanking()
+    {
+        var random=new Random(105);
+        string[] names=["G-903","G903","É Mouse","É-Mouse","鼠标 A","鼠标-A",""];
+        for(int pass=0;pass<250;pass++){
+            var devices=Enumerable.Range(0,random.Next(0,40)).Select(i=>new LogiDevice{
+                DeviceType=(DeviceType)random.Next(0,4),
+                DeviceName=names[random.Next(names.Length)],
+                DeviceId="id"+random.Next(3),
+                DeviceSignature=random.Next(2)==0?"":"shared"+random.Next(2),
+                DataSource=random.Next(2)==0?DataSource.Native:DataSource.GHub,
+                HasBattery=random.Next(5)!=0,
+                IsOnline=random.Next(2)==0,
+                IsWiredMode=random.Next(4)==0,
+                BatteryPercentage=random.Next(-1,102),
+                LastUpdate=DateTimeOffset.UnixEpoch.AddSeconds(random.Next(3)),
+                PowerSupplyStatus=PowerSupplyStatus.DISCHARGING
+            }).ToArray();
+            var expected=devices.Where(d=>d.HasBattery&&TaskbarBattery.Rank(d.DeviceType)<4)
+                .GroupBy(d=>$"logi:{d.DeviceType}:{new string(d.DeviceName.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray())}:{d.DataSource}:{(!string.IsNullOrWhiteSpace(d.DeviceSignature)?d.DeviceSignature:d.DeviceId)}",StringComparer.Ordinal)
+                .Select(g=>TaskbarBattery.From(g.OrderByDescending(d=>d.IsOnline)
+                    .ThenByDescending(d=>d.BatteryPercentage is >=0 and <=100&&!d.IsWiredMode)
+                    .ThenByDescending(d=>d.LastUpdate).ThenBy(d=>d.DataSource)
+                    .ThenBy(d=>d.DeviceId,StringComparer.Ordinal).First(),g.Key)).ToArray();
+            Assert.Equal(expected,TaskbarBattery.ReadSources(devices).ToArray());
+        }
+    }
+
     [Theory]
     [InlineData(0, 0)]
     [InlineData(9, 0)]
