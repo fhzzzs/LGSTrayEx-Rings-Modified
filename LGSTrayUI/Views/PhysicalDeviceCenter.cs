@@ -71,8 +71,32 @@ internal sealed class PhysicalDeviceCenter
     {
         var selected=selector.Select(rawGroups,c,now);
         var snapshot=connections.ObserveSnapshot(selected,now);
-        var rows=snapshot.Groups.Where(g=>!g.Ignored)
-            .Select(g=>g.Reading).Select(d=>c.Names.TryGetValue(d.Key,out var name)&&!string.IsNullOrWhiteSpace(name)?d with{Name=name}:d).ToArray();
-        return new(snapshot.Groups,rows,snapshot.Changes.Where(x=>!snapshot.Groups.Any(g=>g.Ignored&&g.Reading.Key==x.Device.Key)).ToArray(),snapshot.Suppressed);
+        // Count visible rows once and populate the exact-size result without LINQ iterators.
+        int visible=0;
+        foreach(var group in snapshot.Groups)if(!group.Ignored)visible++;
+        var rows=visible==0?Array.Empty<TaskbarBattery>():new TaskbarBattery[visible];
+        int index=0;
+        foreach(var group in snapshot.Groups){
+            if(group.Ignored)continue;
+            var d=group.Reading;
+            rows[index++]=c.Names.TryGetValue(d.Key,out var name)&&!string.IsNullOrWhiteSpace(name)&&name!=d.Name?d with{Name=name}:d;
+        }
+        // Usually no connection changed; avoid constructing a filter and nested closure on every state tick.
+        var changes=snapshot.Changes;
+        if(changes.Length>0){
+            int kept=0;
+            foreach(var change in changes)if(!IsIgnored(snapshot.Groups,change.Device.Key))kept++;
+            if(kept!=changes.Length){
+                var filtered=kept==0?Array.Empty<ConnectionChange>():new ConnectionChange[kept];
+                int i=0;
+                foreach(var change in changes)if(!IsIgnored(snapshot.Groups,change.Device.Key))filtered[i++]=change;
+                changes=filtered;
+            }
+        }
+        return new(snapshot.Groups,rows,changes,snapshot.Suppressed);
+    }
+    private static bool IsIgnored(DeviceGroup[] groups,string key){
+        foreach(var group in groups)if(group.Ignored&&group.Reading.Key==key)return true;
+        return false;
     }
 }
