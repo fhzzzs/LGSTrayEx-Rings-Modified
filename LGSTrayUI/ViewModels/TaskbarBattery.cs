@@ -68,15 +68,44 @@ internal sealed record TaskbarBattery
     public static int Rank(DeviceType type) => type switch { DeviceType.Mouse => 0, DeviceType.Headset => 1, DeviceType.Keyboard => 2, DeviceType.Gamepad => 3, _ => 4 };
     public static int ColorBand(int? level) => level switch { null => -1, < 10 => 0, < 20 => 1, _ => 2 };
     private static bool Valid(LogiDevice d) => d.BatteryPercentage is >= 0 and <= 100 && !d.IsWiredMode;
-    private static LogiDevice Best(IEnumerable<LogiDevice> readings) => readings.OrderByDescending(d => d.IsOnline)
-        .ThenByDescending(Valid).ThenByDescending(d => d.LastUpdate).ThenBy(d => d.DataSource).ThenBy(d => d.DeviceId, StringComparer.Ordinal).First();
+    private static bool RanksAhead(LogiDevice candidate,LogiDevice current)
+    {
+        if(candidate.IsOnline!=current.IsOnline)return candidate.IsOnline;
+        bool valid=Valid(candidate),currentValid=Valid(current);
+        if(valid!=currentValid)return valid;
+        int time=candidate.LastUpdate.CompareTo(current.LastUpdate);
+        if(time!=0)return time>0;
+        int source=Comparer<DataSource>.Default.Compare(candidate.DataSource,current.DataSource);
+        if(source!=0)return source<0;
+        return StringComparer.Ordinal.Compare(candidate.DeviceId,current.DeviceId)<0;
+    }
     private static string Identity(LogiDevice d) => !string.IsNullOrWhiteSpace(d.DeviceSignature) ? d.DeviceSignature : d.DeviceId;
-    private static string Model(string name) => new string(name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+    private static string Model(string name)
+    {
+        int count=0;
+        foreach(char ch in name)if(char.IsLetterOrDigit(ch))count++;
+        return string.Create(count,name,static (span,value)=>{
+            int i=0;
+            foreach(char ch in value)if(char.IsLetterOrDigit(ch))span[i++]=char.ToUpperInvariant(ch);
+        });
+    }
 
-    public static IReadOnlyList<TaskbarBattery> ReadSources(IEnumerable<LogiDevice> devices) => devices
-        .Where(d=>d.HasBattery&&Rank(d.DeviceType)<4)
-        .GroupBy(d=>$"logi:{d.DeviceType}:{Model(d.DeviceName)}:{d.DataSource}:{Identity(d)}",StringComparer.Ordinal)
-        .Select(g=>From(Best(g),g.Key)).ToArray();
+    public static IReadOnlyList<TaskbarBattery> ReadSources(IEnumerable<LogiDevice> devices)
+    {
+        // Keep first-seen group order and the original stable tie-breaker, without grouping or sorting.
+        var indexes=new Dictionary<string,int>(StringComparer.Ordinal);
+        var winners=new List<(string Key,LogiDevice Device)>();
+        foreach(var d in devices){
+            if(!d.HasBattery||Rank(d.DeviceType)>=4)continue;
+            string key=$"logi:{d.DeviceType}:{Model(d.DeviceName)}:{d.DataSource}:{Identity(d)}";
+            if(indexes.TryGetValue(key,out int index)){
+                if(RanksAhead(d,winners[index].Device))winners[index]=(key,d);
+            }else{indexes.Add(key,winners.Count);winners.Add((key,d));}
+        }
+        var rows=winners.Count==0?Array.Empty<TaskbarBattery>():new TaskbarBattery[winners.Count];
+        for(int i=0;i<rows.Length;i++)rows[i]=From(winners[i].Device,winners[i].Key);
+        return rows;
+    }
 
     public static TaskbarBattery From(LogiDevice device, string key)
     {
