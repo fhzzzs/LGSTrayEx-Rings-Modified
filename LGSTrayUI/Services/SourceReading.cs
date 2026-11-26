@@ -3,7 +3,7 @@ using System;
 namespace LGSTrayUI;
 
 // One normalized observation; connection and battery freshness are independent.
-internal sealed record SourceReading(TaskbarBattery Row,ConnectionState Connection,BatteryChargeState Charge,
+internal readonly record struct SourceReading(TaskbarBattery Row,ConnectionState Connection,BatteryChargeState Charge,
     ReadingQuality Quality,DateTimeOffset FreshUntil,int Confidence)
 {
     internal static SourceReading Normalize(TaskbarBattery row,DateTimeOffset now,RingPreferences preferences)

@@ -113,7 +113,25 @@ internal static class DeviceIdentityManager
             return new DeviceGroup(best with{Key=g.Key,Name=primary.Name},sources,c.IgnoredDevices.Contains(g.Key),inferred.Contains(g.Key));
         }).OrderBy(g=>TaskbarBattery.Rank(g.Reading.Type)).ThenBy(g=>g.Reading.Key,StringComparer.Ordinal).ToArray();
     }
-    internal static TaskbarBattery Best(IEnumerable<TaskbarBattery> sources,string? preferred)=>sources.OrderBy(d=>d.Offline).ThenByDescending(d=>d.Level is >=0 and <=100).ThenByDescending(d=>d.Key==preferred).ThenByDescending(d=>d.ShortLabel!=null&&d.ShortLabel!="—"&&d.ShortLabel!="USB").ThenBy(d=>d.Key.StartsWith("xinput:")?2:d.Key.StartsWith("ble:")?1:0).ThenByDescending(d=>d.Updated).ThenBy(d=>d.Key,StringComparer.Ordinal).First();
+    private static (bool Online, bool HasLevel, bool Preferred, bool HasLabel, int Provider, DateTimeOffset Updated)
+        Priority(TaskbarBattery row, string? preferred) =>
+        (!row.Offline, row.Level is >= 0 and <= 100, row.Key == preferred,
+         row.ShortLabel is not (null or "—" or "USB"),
+         row.Key.StartsWith("xinput:") ? 0 : row.Key.StartsWith("ble:") ? 1 : 2, row.Updated);
+
+    internal static bool RanksAhead(TaskbarBattery candidate, TaskbarBattery current, string? preferred)
+    {
+        int order = Priority(candidate, preferred).CompareTo(Priority(current, preferred));
+        return order > 0 || order == 0 && string.CompareOrdinal(candidate.Key, current.Key) < 0;
+    }
+
+    internal static TaskbarBattery Best(IEnumerable<TaskbarBattery> sources, string? preferred)
+    {
+        TaskbarBattery? best = null;
+        foreach (var row in sources)
+            if (best == null || RanksAhead(row, best, preferred)) best = row;
+        return best ?? throw new InvalidOperationException("Sequence contains no elements");
+    }
     // Preserve existing primary settings; inherit missing ones from secondary. Keep the
     // secondary settings so undoing a manual link does not destroy customization.
     internal static void Inherit(RingPreferences c,string from,string to){

@@ -9,6 +9,23 @@ public class DeviceSourceArchitectureTests
     private static readonly DateTimeOffset Now=DateTimeOffset.UnixEpoch.AddDays(1);
     private static TaskbarBattery Native(string id="one",string? physical=null)=>new(DeviceType.Mouse,"PRO X 2",97,"已连接",false,Now,"logi:Mouse:PROX2:Native:"+id,PhysicalId:physical);
     private static TaskbarBattery Hub(int mode,bool reports=false,string? physical=null)=>new(DeviceType.Mouse,"PRO X SUPERLIGHT 2 Wireless Mouse",reports?97:null,reports?"已连接":"离线",false,reports?Now:DateTimeOffset.MinValue,"logi:Mouse:PROXSUPERLIGHT2:GHub:GHUB.pro_x_2_wireless_mouse"+(mode==0?"":"_ext"+mode),PhysicalId:physical);
+    [Fact]
+    public void BandOnlySelectionKeepsSourceOrderAndAnExplicitBandCanOverrideAnExactReading()
+    {
+        var slot = new TaskbarBattery(DeviceType.Gamepad, "Pad", null, "已连接", false, Now, "xinput:0", "4/4") { Estimated = true };
+        var native = slot with { Key = "gip:pad", ShortLabel = "2/4", Estimated = false, Updated = Now.AddSeconds(-1) };
+        var root = native with { Key = "device:pad" };
+        var preferences = new RingPreferences();
+        var selector = new BatterySourceSelector();
+        DeviceGroup Group(TaskbarBattery report) => new(root, [slot, report], false);
+
+        Assert.Equal("2/4", Assert.Single(selector.Select([Group(native)], preferences, Now)).Reading.ShortLabel);
+        preferences.PreferredSources[root.Key] = slot.Key;
+        var exact = native with { Level = 70, ShortLabel = null };
+        Assert.Equal("4/4", Assert.Single(selector.Select([Group(exact)], preferences, Now)).Reading.ShortLabel);
+        preferences.PreferredSources.Clear();
+        Assert.Equal(70, Assert.Single(selector.Select([Group(exact)], preferences, Now)).Reading.Level);
+    }
     [Theory]
     [InlineData(3)]
     [InlineData(4)]
