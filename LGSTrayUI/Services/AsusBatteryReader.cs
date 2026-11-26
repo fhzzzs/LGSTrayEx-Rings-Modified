@@ -219,7 +219,7 @@ internal static class AsusBatteryReader
         var rows=new List<TaskbarBattery>();var seen=new HashSet<string>(StringComparer.Ordinal);var notes=new List<string>();
         // One buffer per scan, never shared between concurrent providers.
         byte[]? scanBuffer=null;
-        ReadOnlySpan<ushort> vendors=gameSirOnly?[0x3537]:[0x054C,0x057E,0x2DC8];
+        ReadOnlySpan<ushort> vendors = gameSirOnly ? [0x3537] : [0x054C,0x057E,0x2DC8];
         foreach(ushort vid in vendors){
             var head=hid_enumerate(vid,0);
             try{
