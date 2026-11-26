@@ -4,6 +4,8 @@ using LGSTrayPrimitives;
 using Windows.Gaming.Input;
 using Windows.System.Power;
 using Windows.Devices.Power;
+using System.Threading;
+using System.Threading.Tasks;
 namespace LGSTrayUI;
 internal static class GipBatteryReader
 {
@@ -18,7 +20,7 @@ internal static class GipBatteryReader
     private static string lastGameSir="No GameSir WGI reports captured in this session";
     internal static string LastGameSir=>System.Threading.Volatile.Read(ref lastGameSir);
     internal static string Diagnostics=>System.Threading.Volatile.Read(ref diagnostics);
-    internal static IEnumerable<TaskbarBattery> Read()
+    internal static List<TaskbarBattery> Read(bool nativeTelemetry = false)
     {
         var rows=new List<TaskbarBattery>();var notes=new List<string>();var seen=new HashSet<string>(StringComparer.Ordinal);
         void Add(RawGameController raw,Gamepad? gamepad){
@@ -47,7 +49,26 @@ internal static class GipBatteryReader
                 int? level=Level(report);
                 var status=report?.Status==BatteryStatus.Idle&&level==100?"已充满":level.HasValue?"已连接（GIP）":"已连接（GIP 电量不可用）";
                 if(report==null)notes.Add($"{vid:X4}:{pid:X4} no battery report from either API");
-                rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,level,status,report?.Status==BatteryStatus.Charging,level.HasValue?DateTimeOffset.UtcNow:DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});
+                bool charging = report?.Status == BatteryStatus.Charging;
+                string? band = null;
+                var updated = level.HasValue ? DateTimeOffset.UtcNow : DateTimeOffset.MinValue;
+                if (ControllerIdentity.IsG7(vid,pid) && !level.HasValue) {
+                    if (pid == 0x10A9) {
+                        status = "1000 Hz 接收器已连接，未取得实时电量";
+                        notes.Add("3537:10A9 XUSB fast mode; Windows capacity unavailable or synthetic; polling rate untouched");
+                    } else if (nativeTelemetry) {
+                        var native = GameSirGipTelemetry.Instance.Read(raw, out var detail);
+                        notes.Add($"{vid:X4}:{pid:X4} native GIP: {detail}");
+                        if (native is { } sample) {
+                            level = sample.Percent;
+                            band = sample.Band;
+                            updated = sample.Time;
+                            charging = sample.Percent.HasValue ? sample.Charging : charging;
+                            status = band != null ? "已连接（GIP 电量档位）" : charging ? "充电中" : "已连接（GIP 原生电量）";
+                        }
+                    }
+                }
+                rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,level,status,charging,updated,key,band){HardwareVendorId=vid,HardwareProductId=pid});
             }catch(Exception ex){notes.Add($"{vid:X4}:{pid:X4} {ex.GetType().Name}");rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,null,"已连接（GIP 电量不可用）",false,DateTimeOffset.MinValue,key){HardwareVendorId=vid,HardwareProductId=pid});}
         }
         try{

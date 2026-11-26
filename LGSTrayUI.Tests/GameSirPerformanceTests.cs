@@ -39,4 +39,18 @@ public class GameSirPerformanceTests{
         Assert.Equal(15,ProviderScheduler.AdaptiveInterval("controller-hid",TimeSpan.FromSeconds(10),3).TotalSeconds);
         Assert.Equal(2,ProviderScheduler.AdaptiveInterval("gip",TimeSpan.FromSeconds(2),100).TotalSeconds);
     }
+    [Fact]
+    public void NativeGipSeparatesStatusBandsFromVendorPercentages()
+    {
+        var time=DateTimeOffset.UnixEpoch;
+        var status=GameSirGipTelemetry.Decode(3,new byte[]{0x8B,0,0,0},time);
+        Assert.Equal("4/4",status!.Value.Band);
+        Assert.Null(status.Value.Percent);
+        Assert.Null(GameSirGipTelemetry.Decode(3,new byte[]{0x80,0,0,0},time));
+        var payload=new byte[60];payload[0]=0xE0;payload[28]=1;payload[29]=63;
+        var exact=GameSirGipTelemetry.Decode(0x10,payload,time);
+        Assert.Equal(63,exact!.Value.Percent);
+        Assert.True(exact.Value.Charging);
+        Assert.Null(GameSirGipTelemetry.Decode(0x20,payload,time));
+    }
 }
