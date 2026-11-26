@@ -22,9 +22,18 @@ internal static class TaskbarAutomationProbe
     private static long lastAttempt;
     internal const int CaptureIntervalMs=950,SnapshotLifetimeMs=1500;
     private static long captures,cacheHits,rejected,totalMs;
+    private static long occupiedCapture=-1;
+    [ThreadStatic] private static OrCondition? controlsCondition;
     internal static string Metrics=>$"captures={Interlocked.Read(ref captures)} cache hits={Interlocked.Read(ref cacheHits)} rejected={Interlocked.Read(ref rejected)} total capture ms={Interlocked.Read(ref totalMs)}";
     internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
     internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
+    internal static void TrailingGapOccupied(){
+        // Hide immediately. Recheck an unchanged, occupied shell at a lower rate.
+        // Schedule only once per snapshot so polling cannot perpetually postpone it.
+        if(last==null || last.Generation!=generation || occupiedCapture==last.Completed)return;
+        occupiedCapture=last.Completed;
+        retryAfter=Math.Max(retryAfter,last.Completed+2500);
+    }
     internal static bool Fresh(long now,long started,long completed)
         =>completed>=started&&completed<=now&&now-started<=SnapshotLifetimeMs;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
@@ -44,7 +53,7 @@ internal static class TaskbarAutomationProbe
         bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
         // Keep the original 1.5 second freshness safety gate. Start fewer
         // speculative captures and invalidate immediately on a shell change.
-        if(pending==null&&(now>=retryAfter||last!=null&&last.Generation!=currentGeneration)&&(!matching||now-last!.Completed>=CaptureIntervalMs)&&now-lastAttempt>=250){
+        if(pending==null&&now>=retryAfter&&(!matching||now-last!.Completed>=CaptureIntervalMs)&&now-lastAttempt>=250){
             lastAttempt=now;pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         }
         if(!matching||last!.Controls.Length==0)return false;
@@ -54,7 +63,7 @@ internal static class TaskbarAutomationProbe
     {
         long start=Environment.TickCount64;Interlocked.Increment(ref captures);
         try{
-            var condition=new OrCondition(
+            var condition=controlsCondition??=new OrCondition(
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.TabItem),
                 new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.ListItem),

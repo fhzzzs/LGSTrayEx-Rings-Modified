@@ -42,11 +42,17 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         int offset=(int)Math.Round(Math.Clamp(c.X,-100,100)*scale), y=top+(h-height)/2+(int)Math.Round(Math.Clamp(c.Y,-20,20)*scale);
         if(y<top||y+height>bottom){return false;}
         int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale), end=Math.Min(notify.Left,Math.Min(bounds.Right,info.Monitor.Right));
-        if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls))return false;
-        var occupied=controls.Where(r=>r.Top<y+height&&r.Bottom>y&&r.Left<end&&r.Right>bounds.Left)
-            .Select(r=>((int)Math.Floor(r.Left),(int)Math.Ceiling(r.Right))).ToArray();
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
-        if(!TryGap(start,end,width,leftGap,rightGap,offset,occupied,out int x))return false;
+        if (end-start < width+leftGap+rightGap) return false;
+        if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls))return false;
+        int cursor=start;
+        foreach(var r in controls)
+            if(r.Top<y+height && r.Bottom>y && r.Left<end && r.Right>start)
+                cursor=Math.Max(cursor,Math.Min((int)Math.Ceiling(r.Right),end));
+        if(!FitTrailingGap(cursor,end,width,leftGap,rightGap,offset,out int x)){
+            TaskbarAutomationProbe.TrailingGapOccupied();
+            return false;
+        }
         placement=new(x,y,width,height,scale);return true;
     }
     // Use only the trailing free gap; never jump to the leading side or between apps.
@@ -54,6 +60,10 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         x=0;if(width<=0||start>=end||leftGap<0||rightGap<0)return false;
         int cursor=start;
         foreach(var item in occupied){if(item.right>start&&item.left<end)cursor=Math.Max(cursor,Math.Min(item.right,end));}
+        return FitTrailingGap(cursor,end,width,leftGap,rightGap,offset,out x);
+    }
+    private static bool FitTrailingGap(int cursor,int end,int width,int leftGap,int rightGap,int offset,out int x){
+        x=0;
         int lo=cursor+leftGap,hi=end-rightGap-width;
         if(lo>hi)return false;
         x=Math.Clamp(hi+offset,lo,hi);return true;
