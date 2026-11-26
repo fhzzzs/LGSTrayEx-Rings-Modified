@@ -48,6 +48,8 @@ internal static class RingDiagnostics
         using(var current=Process.GetCurrentProcess()){double seconds=Math.Max(1,(now-current.StartTime.ToUniversalTime()).TotalSeconds);b.AppendLine($"Average process CPU (one core=100%): {current.TotalProcessorTime.TotalSeconds/seconds*100:F1}% · allocation rate: {GC.GetTotalAllocatedBytes(false)/1048576d/seconds:F2} MiB/s");}
         b.AppendLine($"GC collections: {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)} · pool threads: {System.Threading.ThreadPool.ThreadCount} · pending work: {System.Threading.ThreadPool.PendingWorkItemCount}");
         b.AppendLine("Shell UIA: "+TaskbarAutomationProbe.Metrics);
+        b.AppendLine("Diagnostic logger: "+DiagnosticLogger.Metrics);
+        if(DiagnosticLogger.LastWriteError is string logError)b.AppendLine("Last logging issue: "+logError);
         foreach(var phase in startupPhases)b.AppendLine($"Startup phase {phase.Key}: {phase.Value} ms");
         if(startupMs>=0)b.AppendLine($"Startup to host ready: {startupMs} ms");
         b.AppendLine($"Animation channels: {RingFrameClock.ActiveCount} · Devices: {groups.Length}");

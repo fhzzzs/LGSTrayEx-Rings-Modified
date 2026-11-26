@@ -351,6 +351,8 @@ public partial class App : Application
             using var launched=System.Diagnostics.Process.Start(start);
         }catch(Exception ex){DiagnosticLogger.LogWarning("Restart failed: "+ex.Message);}
         DiagnosticLogger.Log("Application exit complete");
+        DiagnosticLogger.WriteFailed -= OnDiagnosticLogWriteFailed;
+        DiagnosticLogger.Shutdown(TimeSpan.FromMilliseconds(1500));
         base.OnExit(e);
     }
 

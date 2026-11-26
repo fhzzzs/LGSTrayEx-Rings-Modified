@@ -111,11 +111,12 @@ internal class Program
 
                 CancellationTokenSource cts = new(5000);
                 await host.StopAsync(cts.Token);
-
+                DiagnosticLogger.Shutdown(TimeSpan.FromMilliseconds(1500));
                 Environment.Exit(0);
             });
 
-            await host.RunAsync();
+            try{await host.RunAsync();}
+            finally{DiagnosticLogger.Shutdown(TimeSpan.FromMilliseconds(1500));}
     }
 
     private static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)

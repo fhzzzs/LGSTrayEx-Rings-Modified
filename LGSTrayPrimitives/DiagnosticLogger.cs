@@ -2,242 +2,139 @@ using System.Runtime.CompilerServices;
 
 namespace LGSTrayPrimitives;
 
-/// <summary>
-/// Diagnostic logger for tracing device discovery and UI updates.
-/// Writes to <c>%LOCALAPPDATA%\LGSTray\diagnostic.log</c> 
-/// Enable via the [Logging] config section or the --log command-line flag.
-/// </summary>
+// Existing call sites keep their string API. Interpolated calls select the
+// handler overload and skip evaluating arguments when logging is disabled.
 public static class DiagnosticLogger
 {
-    private static readonly string _logFilePath = Path.Combine(AppDataPaths.LocalAppDataDir, "diagnostic.log");
-
-    private static bool _isEnabled = false;
-    private static bool _isVerboseEnabled = false;
-    private static int _maxLines = 1000;
-    private static int _writesSinceTrim = 0;
-
-    // Set once when a write fails so we surface the problem to the user a single time,
-    // rather than silently swallowing every failed append.
-    private static int _writeFailureReported = 0;
-
-    /// <summary>
-    /// Number of writes between trim checks. Avoids checking file size on every write.
-    /// </summary>
-    private const int TrimCheckInterval = 100;
-    private const long MaxLogBytes = 4L * 1024 * 1024;
-
-    /// <summary>
-    /// Full path of the diagnostic log file. Lives in <see cref="AppDataPaths.LocalAppDataDir"/>
-    /// (<c>%LOCALAPPDATA%\LGSTray\diagnostic.log</c>), which is user-writable and survives
-    /// installs to UAC-protected folders such as Program Files.
-    /// </summary>
-    public static string LogFilePath => _logFilePath;
-
-    /// <summary>
-    /// The error message from the most recent failed log write, or null if none.
-    /// </summary>
-    public static string? LastWriteError { get; private set; }
-
-    /// <summary>
-    /// Raised the first time a diagnostic log write fails (e.g. the target folder is
-    /// read-only). Fired at most once per process so subscribers (UI) can surface a single
-    /// notification instead of spamming. The argument is a human-readable description
-    /// including the offending path.
-    /// </summary>
+    private static readonly object gate=new();
+    private static readonly string _logFilePath=Path.Combine(AppDataPaths.LocalAppDataDir,"diagnostic.log");
+    private static DiagnosticLogWriter? writer;
+    private static volatile bool verbose;
+    private static string? lastWriteError;
+    private static int failureReported;
+    public static string LogFilePath=>_logFilePath;
+    public static string? LastWriteError=>Volatile.Read(ref lastWriteError);
     public static event Action<string>? WriteFailed;
+    public static bool IsEnabled=>Volatile.Read(ref writer)!=null;
+    public static bool IsVerboseEnabled=>verbose&&IsEnabled;
+    public static string Metrics=>Volatile.Read(ref writer)?.Metrics??"disabled";
+    static DiagnosticLogger()=>AppDomain.CurrentDomain.ProcessExit+=(_,_)=>Shutdown(TimeSpan.FromMilliseconds(1500));
 
-    /// <summary>
-    /// Gets whether logging is enabled (--log flag).
-    /// </summary>
-    public static bool IsEnabled => _isEnabled;
-
-    /// <summary>
-    /// Gets whether verbose logging is enabled (--verbose flag).
-    /// </summary>
-    public static bool IsVerboseEnabled => _isVerboseEnabled;
-
-    /// <summary>
-    /// Initialize logging based on command-line arguments.
-    /// Must be called before any Log() calls.
-    /// </summary>
-    /// <param name="enableLogging">Enable standard logging (--log)</param>
-    /// <param name="enableVerbose">Enable verbose logging (--verbose)</param>
-    /// <param name="maxLines">Maximum lines to keep in log file (0 = unlimited)</param>
-    public static void Initialize(bool enableLogging, bool enableVerbose, int maxLines = 1000)
+    public static void Initialize(bool enableLogging,bool enableVerbose,int maxLines=1000)
     {
-        _isEnabled = enableLogging;
-        _isVerboseEnabled = enableVerbose;
-        _maxLines = maxLines;
-        _writesSinceTrim = 0;
-
-        // If verbose is enabled, standard logging must also be enabled
-        if (_isVerboseEnabled && !_isEnabled)
-        {
-            _isEnabled = true;
-        }
-
-        // Trim log file at startup if it exceeds the limit
-        if (_isEnabled && _maxLines > 0)
-        {
-            try
-            {
-                using var mutex = new Mutex(false, "LOG_WRITE");
-                if (TryAcquire(mutex))
-                {
-                    try { TrimLogFile(); }
-                    finally { mutex.ReleaseMutex(); }
-                }
-            }
-            catch (Exception)
-            {
-                // Silently ignore trim failures at startup
-            }
-        }
-    }
-
-    /// <summary>
-    /// Log an informational message with timestamp.
-    /// </summary>
-    public static void Log(string message, [CallerMemberName] string callerMember = "")
-    {
-        if (!_isEnabled) return;
-
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] [{callerMember}]: {message}";
-        WriteToFile(formatted);
-        WriteToConsole(formatted);
-    }
-    /// <summary>
-    /// Log verbose message with timestamp.
-    /// Requires --verbose flag.
-    /// </summary>
-    public static void Verbose(string message, [CallerMemberName] string callerMember = "")
-    {
-        if (!_isVerboseEnabled) return;
-
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] [VERBOSE] [{callerMember}]: {message}";
-        WriteToFile(formatted);
-        WriteToConsole(formatted);
-    }
-
-
-
-    /// <summary>
-    /// Log a warning message with timestamp.
-    /// </summary>
-    public static void LogWarning(string message, [CallerMemberName] string callerMember = "")
-    {
-        if (!_isEnabled) return;
-
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] WARNING: {message}";
-        WriteToFile(formatted);
-        WriteToConsole(formatted);
-    }
-
-    /// <summary>
-    /// Log an error message with timestamp.
-    /// </summary>
-    public static void LogError(string message, [CallerMemberName] string callerMember = "")
-    {
-        if (!_isEnabled) return;
-
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] ERROR: {message}";
-        WriteToFile(formatted);
-        WriteToConsole(formatted);
-    }
-
-    private static bool TryAcquire(Mutex mutex)
-    {
-        try { return mutex.WaitOne(TimeSpan.FromMilliseconds(200), false); }
-        catch (AbandonedMutexException) { return true; }
-    }
-
-    private static void WriteToFile(string message)
-    {
-        using var mutex = new Mutex(false, "LOG_WRITE");
-        var hasHandle = false;
-        try
-        {
-            hasHandle = TryAcquire(mutex);
-            if (!hasHandle) return;
-
-            File.AppendAllText(_logFilePath, message + Environment.NewLine);
-
-            _writesSinceTrim++;
-            if (_maxLines > 0 && _writesSinceTrim >= TrimCheckInterval)
-            {
-                _writesSinceTrim = 0;
-                TrimLogFile();
-            }
-
-            // Recovered: allow a future failure to be reported again.
-            Interlocked.Exchange(ref _writeFailureReported, 0);
-        }
-        catch (Exception ex)
-        {
-            LastWriteError = ex.Message;
-            Console.WriteLine($"Failed to write to diagnostic log file '{_logFilePath}': {ex.Message}");
-
-            // Surface to subscribers only on the first failure of a streak to avoid flooding.
-            if (Interlocked.Exchange(ref _writeFailureReported, 1) == 0)
-            {
-                try
-                {
-                    WriteFailed?.Invoke(
-                        $"Diagnostic logging is enabled but writing to '{_logFilePath}' failed: {ex.Message}");
-                }
-                catch (Exception)
-                {
-                    // Never let a faulty subscriber break logging.
-                }
-            }
-        }
-        finally
-        {
-            if (hasHandle)
-                mutex.ReleaseMutex();
-        }
-    }
-
-    /// <summary>
-    /// Trims the log file to MaxLines if it exceeds the limit.
-    /// Must be called while holding the LOG_WRITE mutex.
-    /// </summary>
-    private static void TrimLogFile()
-    {
-        try
-        {
-            if (!File.Exists(_logFilePath)) return;
-
-            if (_maxLines <= 0) return;
-            // Keep one previous segment, rather than scanning an arbitrarily large file.
-            if (new FileInfo(_logFilePath).Length > MaxLogBytes)
-            {
-                File.Move(_logFilePath, _logFilePath + ".1", true);
+        lock(gate){
+            var previous=Interlocked.Exchange(ref writer,null);
+            verbose=false;
+            if(previous!=null&&!previous.StopAsync(TimeSpan.FromMilliseconds(1500)).GetAwaiter().GetResult()){
+                ReportFailure("Previous log writer did not finish within the shutdown deadline.");
                 return;
             }
-            var tail = new Queue<string>();
-            long count = 0;
-            foreach (var line in File.ReadLines(_logFilePath))
-            {
-                if (tail.Count == _maxLines) tail.Dequeue();
-                tail.Enqueue(line);
-                count++;
-            }
-            if (count > _maxLines) File.WriteAllLines(_logFilePath, tail);
+            Volatile.Write(ref lastWriteError,null);
+            Interlocked.Exchange(ref failureReported,0);
+            if(!enableLogging&&!enableVerbose)return;
+            try{
+                Volatile.Write(ref writer,new DiagnosticLogWriter(_logFilePath,maxLines,"LOG_WRITE",ReportFailure,ReportRecovery));
+                verbose=enableVerbose;
+            }catch(Exception ex){ReportFailure(ex.Message);}
         }
-        catch { }
     }
 
-    private static void WriteToConsole(string formatted)
+    public static void Log(string message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+        =>Write(LogSeverity.Info,message,callerMember,file);
+    public static void Verbose(string message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+        =>Write(LogSeverity.Debug,message,callerMember,file);
+    public static void LogWarning(string message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+        =>Write(LogSeverity.Warning,message,callerMember,file);
+    public static void LogError(string message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+        =>Write(LogSeverity.Error,message,callerMember,file);
+
+    public static void Log(ref LogMessageHandler message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+    {if(message.Enabled)Log(message.GetText(),callerMember,file);}
+    public static void Verbose(ref VerboseLogMessageHandler message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+    {if(message.Enabled)Verbose(message.GetText(),callerMember,file);}
+    public static void LogWarning(ref LogMessageHandler message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+    {if(message.Enabled)LogWarning(message.GetText(),callerMember,file);}
+    public static void LogError(ref LogMessageHandler message,[CallerMemberName]string callerMember="",[CallerFilePath]string file="")
+    {if(message.Enabled)LogError(message.GetText(),callerMember,file);}
+
+    private static void Write(LogSeverity level,string message,string caller,string file)
     {
-#if DEBUG
-        Console.WriteLine(formatted);
-#endif
+        var sink=Volatile.Read(ref writer);
+        if(sink==null||level==LogSeverity.Debug&&!verbose)return;
+        sink.Enqueue(new(DateTimeOffset.Now,level,Category(file),caller,message??""));
     }
+    internal static string Category(string file)
+    {
+        if(file.Contains("LGSTrayHID",StringComparison.OrdinalIgnoreCase)||
+           file.Contains("Protocol",StringComparison.OrdinalIgnoreCase)||
+           file.Contains("BatteryReader",StringComparison.OrdinalIgnoreCase)||
+           file.Contains("GameSir",StringComparison.OrdinalIgnoreCase))return "Protocol";
+        if(file.Contains("Diagnostics",StringComparison.OrdinalIgnoreCase)||
+           file.Contains("Scheduler",StringComparison.OrdinalIgnoreCase)||
+           file.Contains("FrameClock",StringComparison.OrdinalIgnoreCase))return "Performance";
+        if(file.Contains("Device",StringComparison.OrdinalIgnoreCase))return "Device";
+        if(file.Contains("LGSTrayUI",StringComparison.OrdinalIgnoreCase))return "UI";
+        return "Core";
+    }
+    private static void ReportRecovery()=>Interlocked.Exchange(ref failureReported,0);
+    private static void ReportFailure(string error)
+    {
+        Volatile.Write(ref lastWriteError,error);
+        if(Interlocked.Exchange(ref failureReported,1)!=0)return;
+        string message=$"Diagnostic logging: '{_logFilePath}': {error}";
+        try{Console.Error.WriteLine(message);}catch{}
+        try{WriteFailed?.Invoke(message);}catch{}
+    }
+    // Safe to call on the WPF dispatcher: the writer never waits on that dispatcher.
+    public static bool Shutdown(TimeSpan timeout)
+    {
+        DiagnosticLogWriter? sink;
+        lock(gate){verbose=false;sink=Interlocked.Exchange(ref writer,null);}
+        if(sink==null)return true;
+        bool ok=sink.StopAsync(timeout).GetAwaiter().GetResult();
+        if(!ok)ReportFailure("Log shutdown did not drain successfully before the deadline.");
+        return ok;
+    }
+}
 
+[InterpolatedStringHandler]
+public ref struct LogMessageHandler
+{
+    private DefaultInterpolatedStringHandler inner;
+    private readonly bool enabled;
+    public LogMessageHandler(int literalLength,int formattedCount,out bool shouldAppend)
+    {
+        enabled=shouldAppend=DiagnosticLogger.IsEnabled;
+        inner=enabled?new DefaultInterpolatedStringHandler(literalLength,formattedCount):default;
+    }
+    public void AppendLiteral(string value)=>inner.AppendLiteral(value);
+    public void AppendFormatted<T>(T value)=>inner.AppendFormatted(value);
+    public void AppendFormatted<T>(T value,string? format)=>inner.AppendFormatted(value,format);
+    public void AppendFormatted<T>(T value,int alignment)=>inner.AppendFormatted(value,alignment);
+    public void AppendFormatted<T>(T value,int alignment,string? format)=>inner.AppendFormatted(value,alignment,format);
+    public void AppendFormatted(ReadOnlySpan<char> value)=>inner.AppendFormatted(value);
+    public void AppendFormatted(ReadOnlySpan<char> value,int alignment=0,string? format=null)=>inner.AppendFormatted(value,alignment,format);
+    public bool Enabled=>enabled;
+    public string GetText()=>enabled?inner.ToStringAndClear():"";
+}
 
+[InterpolatedStringHandler]
+public ref struct VerboseLogMessageHandler
+{
+    private DefaultInterpolatedStringHandler inner;
+    private readonly bool enabled;
+    public VerboseLogMessageHandler(int literalLength,int formattedCount,out bool shouldAppend)
+    {
+        enabled=shouldAppend=DiagnosticLogger.IsVerboseEnabled;
+        inner=enabled?new DefaultInterpolatedStringHandler(literalLength,formattedCount):default;
+    }
+    public void AppendLiteral(string value)=>inner.AppendLiteral(value);
+    public void AppendFormatted<T>(T value)=>inner.AppendFormatted(value);
+    public void AppendFormatted<T>(T value,string? format)=>inner.AppendFormatted(value,format);
+    public void AppendFormatted<T>(T value,int alignment)=>inner.AppendFormatted(value,alignment);
+    public void AppendFormatted<T>(T value,int alignment,string? format)=>inner.AppendFormatted(value,alignment,format);
+    public void AppendFormatted(ReadOnlySpan<char> value)=>inner.AppendFormatted(value);
+    public void AppendFormatted(ReadOnlySpan<char> value,int alignment=0,string? format=null)=>inner.AppendFormatted(value,alignment,format);
+    public bool Enabled=>enabled;
+    public string GetText()=>enabled?inner.ToStringAndClear():"";
 }
