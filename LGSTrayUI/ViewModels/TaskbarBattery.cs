@@ -63,7 +63,7 @@ internal sealed record TaskbarBattery
     public string RingLabel=>Offline?"Off":Connection is ConnectionState.Reconnecting or ConnectionState.Connecting?"…":Stale?"N/A":IsFull?"Full":ConnectionOnly?"ON":Quality==ReadingQuality.Unknown&&Charging?"N/A":Percent;
     public string DisplayStatus=>Status+" · "+RingLabel;
     public int BarValue => IsFull?100:Level is >=0 and <=100 ? Level.Value : 0;
-    public string AccessibleLabel => $"{Category}，{Name}，{Status}，{Percent}";
+    public string AccessibleLabel => $"{Category}，{Name}，{Status}，{RingLabel}";
     public string UpdatedLabel => Stale&&LastKnownLevel is int last ? $"历史电量 {last}% · {Updated.ToLocalTime():HH:mm}" : Updated == DateTimeOffset.MinValue ? "暂无读数" : $"更新于 {Updated.ToLocalTime():HH:mm}";
     public static int Rank(DeviceType type) => type switch { DeviceType.Mouse => 0, DeviceType.Headset => 1, DeviceType.Keyboard => 2, DeviceType.Gamepad => 3, _ => 4 };
     public static int ColorBand(int? level) => level switch { null => -1, < 10 => 0, < 20 => 1, _ => 2 };
@@ -82,6 +82,7 @@ internal sealed record TaskbarBattery
     {
         bool charging = device.IsOnline && device.PowerSupplyStatus!=PowerSupplyStatus.FULL && (device.IsWiredMode || device.PowerSupplyStatus == PowerSupplyStatus.CHARGING);
         int? level = device.IsOnline && Valid(device) ? (int)Math.Round(device.BatteryPercentage, MidpointRounding.AwayFromZero) : null;
+        if (device.IsOnline && device.PowerSupplyStatus == PowerSupplyStatus.FULL) level ??= 100;
         // A G HUB inventory-only record with no battery reading is not an online device.
         // A later valid update promotes it normally.
         bool inventoryOnly=device.DataSource==DataSource.GHub&&device.LastUpdate==DateTimeOffset.MinValue&&!level.HasValue&&!charging;

@@ -57,4 +57,17 @@ public class RuntimeFeedbackTests{
         c.Order=DeviceOrder.MergeDrag(c.Order,["pad","mouse","new"]);
         Assert.Equal(new[]{"pad","away","mouse","new"},RingSettingsStore.Parse(RingSettingsStore.Snapshot(c)).Order);
     }
+    [Fact]
+    public void ExplicitFullWithNoSeparatePercentageShowsAnAccessibleCheckState()
+    {
+        var native=new LGSTrayCore.LogiDevice {
+            DeviceType=DeviceType.Headset,DeviceName="Headset",IsOnline=true,IsWiredMode=true,
+            PowerSupplyStatus=PowerSupplyStatus.FULL,BatteryPercentage=-1,LastUpdate=T
+        };
+        var row=TaskbarBattery.From(native,"logi:Headset:TEST:Native:1");
+        Assert.Equal(100,row.Level);
+        Assert.True(row.IsFull);
+        Assert.False(row.IsActivelyCharging);
+        Assert.Contains("Full",row.AccessibleLabel);
+    }
 }
