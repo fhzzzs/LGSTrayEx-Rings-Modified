@@ -101,7 +101,8 @@ public partial class LogiDevice : ObservableObject
 
     partial void OnLastUpdateChanged(DateTimeOffset value)
     {
-        DiagnosticLogger.Log(ToolTipString);
+        // Avoid building the tooltip solely for disabled diagnostic logging.
+        if (DiagnosticLogger.IsEnabled) DiagnosticLogger.Log(ToolTipString);
     }
 
     public string GetXmlData()
