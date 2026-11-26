@@ -53,4 +53,13 @@ public class GameSirPerformanceTests{
         Assert.True(exact.Value.Charging);
         Assert.Null(GameSirGipTelemetry.Decode(0x20,payload,time));
     }
+    [Fact]
+    public void FastReceiverRejectsWiredPlaceholderAndInvalidDeviceProperty()
+    {
+        Assert.Null(GipBatteryReader.ReportPercent(1000,1000,null));
+        Assert.Null(GameSirFastBattery.PublishedPercent(null));
+        Assert.Null(GameSirFastBattery.PublishedPercent((byte)255));
+        Assert.Equal(73,GameSirFastBattery.PublishedPercent((byte)73));
+        Assert.Equal(0,GameSirFastBattery.PublishedPercent((byte)0));
+    }
 }

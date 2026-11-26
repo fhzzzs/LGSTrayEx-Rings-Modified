@@ -57,6 +57,8 @@ internal static class RingDiagnostics
         b.AppendLine("  ASUS OMNI: "+AsusBatteryReader.Diagnostics);
         b.AppendLine("  GIP battery: "+GipBatteryReader.Diagnostics);
         b.AppendLine("  Last GameSir WGI: "+GipBatteryReader.LastGameSir);
+        b.AppendLine("  G7 Pro 1000 Hz (last online): "+GameSirFastBattery.LastOnline);
+        b.AppendLine("  XInput slots (last online): "+XInputBatteryReader.LastOnline);
         b.AppendLine("  GameSir passive HID: "+AsusBatteryReader.GameSirDiagnostics);
         b.AppendLine();b.AppendLine("Hardware discovery (on demand):");b.AppendLine(HardwareInventory);
         b.AppendLine();b.AppendLine("Logical devices:");

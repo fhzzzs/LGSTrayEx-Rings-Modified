@@ -20,6 +20,12 @@ internal static class GipBatteryReader
     private static string lastGameSir="No GameSir WGI reports captured in this session";
     internal static string LastGameSir=>System.Threading.Volatile.Read(ref lastGameSir);
     internal static string Diagnostics=>System.Threading.Volatile.Read(ref diagnostics);
+    internal static Task<IReadOnlyList<TaskbarBattery>> ReadAsync(bool nativeTelemetry, CancellationToken token) =>
+        Task.Run<IReadOnlyList<TaskbarBattery>>(async () => {
+            var rows = Read(nativeTelemetry);
+            await GameSirFastBattery.CheckAsync(rows, token).ConfigureAwait(false);
+            return rows;
+        }, token);
     internal static List<TaskbarBattery> Read(bool nativeTelemetry = false)
     {
         var rows=new List<TaskbarBattery>();var notes=new List<string>();var seen=new HashSet<string>(StringComparer.Ordinal);

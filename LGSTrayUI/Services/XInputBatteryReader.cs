@@ -2,12 +2,15 @@ using LGSTrayPrimitives;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace LGSTrayUI;
 
 // XInput exposes four battery bands, not an exact percentage or controller model.
 internal static class XInputBatteryReader
 {
+    private static string lastOnline = "No XInput battery response";
+    internal static string LastOnline => Volatile.Read(ref lastOnline);
     [StructLayout(LayoutKind.Sequential)]
     private struct GamepadState
     {
@@ -26,6 +29,7 @@ internal static class XInputBatteryReader
     public static IEnumerable<TaskbarBattery> Read()
     {
         var result = new List<TaskbarBattery>();
+        var observed = new List<string>();
         try
         {
             for (uint i = 0; i < 4; i++)
@@ -34,6 +38,8 @@ internal static class XInputBatteryReader
                 string label = "—", status = "已连接（电量不可用）";
                 if (XInputGetBatteryInformation(i, 0, out var battery) == 0)
                 {
+                    observed.Add($"slot {i} type={battery.Type} band={battery.Level}" +
+                        (battery.Type == 1 ? " (wired/receiver; band ignored)" : ""));
                     if (battery.Type == 1) { label = "USB"; status = "有线或接收器模式（未提供电量）"; }
                     else if (battery.Type is 2 or 3)
                     {
@@ -46,6 +52,7 @@ internal static class XInputBatteryReader
         }
         catch (DllNotFoundException) { }
         catch (EntryPointNotFoundException) { }
+        if (observed.Count > 0) Volatile.Write(ref lastOnline, $"{DateTimeOffset.UtcNow:O} · {string.Join(", ",observed)}");
         return result;
     }
 }
