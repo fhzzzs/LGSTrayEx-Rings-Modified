@@ -70,4 +70,19 @@ public class RuntimeFeedbackTests{
         Assert.False(row.IsActivelyCharging);
         Assert.Contains("Full",row.AccessibleLabel);
     }
+    [Fact]
+    public void ConflictingNewSourceCanReplaceAnAlreadySelectedNativeFull()
+    {
+        var native=Row(DeviceType.Headset,"logi:Headset:PRO:Native:a",100,"已充满");
+        var hub=Row(DeviceType.Headset,"logi:Headset:PRO:GHub:b",99,"充电中",true);
+        var root=native with {Key="device:headset"};
+        var selector=new BatterySourceSelector();
+        var c=new RingPreferences();
+        DeviceGroup Group(TaskbarBattery h)=>new(root,[native,h],false);
+        Assert.True(Assert.Single(selector.Select([Group(hub)],c,T)).Reading.IsFull);
+        var when=T.AddMinutes(1);
+        var reading=Assert.Single(selector.Select([Group(hub with {Updated=when,Level=72})],c,when)).Reading;
+        Assert.False(reading.IsFull);
+        Assert.Equal(72,reading.Level);
+    }
 }

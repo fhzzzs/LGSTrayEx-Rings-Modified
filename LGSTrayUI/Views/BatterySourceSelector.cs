@@ -10,9 +10,10 @@ internal sealed class BatterySourceSelector
 {
     private readonly Dictionary<string,string> selected=new(StringComparer.Ordinal);
     internal static bool Usable(TaskbarBattery row)=>row.IsConnected&&row.Level is >=0 and <=100;
+    private static bool NativeFull(TaskbarBattery row)=>row.IsFull&&row.Key.Contains(":Native:",StringComparison.Ordinal);
     internal static TaskbarBattery? ConfirmedFull(SourceReading[] fresh){
         if(fresh.Any(s=>s.Quality==ReadingQuality.Exact&&s.Row.Level<95))return null;
-        var full=fresh.Where(s=>s.Quality==ReadingQuality.Exact&&s.Row.IsFull&&s.Row.Key.Contains(":Native:",StringComparison.Ordinal)).OrderByDescending(s=>s.Row.Updated).FirstOrDefault();
+        var full=fresh.Where(s=>s.Quality==ReadingQuality.Exact&&NativeFull(s.Row)).OrderByDescending(s=>s.Row.Updated).FirstOrDefault();
         if(full==null)return null;
         if(fresh.Any(s=>s.Row.Key!=full.Row.Key&&s.Quality==ReadingQuality.Exact&&s.Row.Updated>full.Row.Updated.AddSeconds(30)&&!s.Row.IsFull))return null;
         return full.Row;
@@ -33,7 +34,13 @@ internal sealed class BatterySourceSelector
                 chosen=fresh.FirstOrDefault(d=>d.Row.Key==preferred)?.Row;
             // Explicit user preference wins. Otherwise a fresh native FULL report
             // supersedes a near-full charging G HUB observation of the same group.
-            if(chosen==null)chosen=ConfirmedFull(fresh);
+            if(chosen==null && Array.Exists(candidates,NativeFull)) {
+                chosen=ConfirmedFull(fresh);
+                if(chosen==null && Array.Exists(candidates,row=>!NativeFull(row))) {
+                    fresh=Array.FindAll(fresh,s=>!NativeFull(s.Row));
+                    candidates=Array.FindAll(candidates,row=>!NativeFull(row));
+                }
+            }
             if(chosen==null&&group.Inferred&&sources.Any(ControllerAliasMatcher.IsGip))chosen=candidates.FirstOrDefault(ControllerAliasMatcher.IsXboxBle);
             if(chosen==null&&selected.TryGetValue(root,out var previous))
                 chosen=candidates.FirstOrDefault(d=>d.Key==previous);
