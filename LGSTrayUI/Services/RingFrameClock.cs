@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace LGSTrayUI;
 
@@ -12,15 +13,32 @@ internal static class RingFrameClock
 {
     private static readonly Stopwatch watch=Stopwatch.StartNew();
     private static readonly Dictionary<object,Action<double>> frames=new();
+    private static readonly HashSet<object> lowRate=new();
+    private static DispatcherTimer? ambientTimer;
+    private static bool usingCompositor;
     private static KeyValuePair<object,Action<double>>[]? frameSnapshot;
     internal static double Now=>watch.Elapsed.TotalMilliseconds;
     internal static int ActiveCount=>frames.Count;
-    internal static void Set(object key,Action<double> frame){
-        bool empty=frames.Count==0;frames[key]=frame;frameSnapshot=null;
-        if(empty)CompositionTarget.Rendering+=Render;
+    internal static void Set(object key,Action<double> frame,bool ambient=false){
+        frames[key]=frame;frameSnapshot=null;
+        if(ambient)lowRate.Add(key);else lowRate.Remove(key);
+        SelectClock();
     }
     internal static void Remove(object key){
-        if(frames.Remove(key)){frameSnapshot=null;if(frames.Count==0)CompositionTarget.Rendering-=Render;}
+        if(frames.Remove(key)){lowRate.Remove(key);frameSnapshot=null;SelectClock();}
+    }
+    private static void SelectClock(){
+        bool fullRate=frames.Count>lowRate.Count;
+        if(fullRate!=usingCompositor){
+            if(fullRate)CompositionTarget.Rendering+=Render;else CompositionTarget.Rendering-=Render;
+            usingCompositor=fullRate;
+        }
+        if(fullRate||frames.Count==0){ambientTimer?.Stop();return;}
+        if(ambientTimer==null){
+            ambientTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(1000d/30)};
+            ambientTimer.Tick+=Render;
+        }
+        ambientTimer.Start();
     }
     private static void Render(object? sender,EventArgs e){
         double now=Now;
