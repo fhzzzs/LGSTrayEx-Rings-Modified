@@ -124,7 +124,7 @@ internal sealed class RingStripAnimator : IDisposable
         if(changed||!previous.SequenceEqual(order))Reflow();
         if(!StaticPreview&&entries.Values.Any(e=>e.OfflineAt.HasValue&&(PreviewMode||c.AutoHide)))timer.Start();else timer.Stop();
     }
-    internal void RefreshTimestamps(TaskbarBattery[] rows){foreach(var d in rows)if(entries.TryGetValue(d.Key,out var e)&&e.Data.Updated!=d.Updated){e.Data=d;e.Button.DataContext=d;}}
+    internal void RefreshTimestamps(TaskbarBattery[] rows){foreach(var d in rows)if(entries.TryGetValue(d.Key,out var e)&&e.Data.Updated!=d.Updated)e.Data=d;}
     internal void RefreshLayout()=>Reflow();
     private void StopMove(){RingFrameClock.Remove(moveKey);moveFrame=null;finishMove=null;}
     internal void Reset(){

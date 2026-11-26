@@ -21,6 +21,7 @@ internal sealed class GroupedConnectionTracker
         internal bool HeldDuringSuppression;
     }
     private Dictionary<string,State> states=new(StringComparer.Ordinal);
+    private DeviceGroup[] previousGroups=[];
     private DateTimeOffset suppressedUntil,lastObserved;
     internal GroupedConnectionTracker(DateTimeOffset now)
     {
@@ -40,10 +41,15 @@ internal sealed class GroupedConnectionTracker
         if(now-lastObserved>TimeSpan.FromSeconds(15))Suppress(now,TimeSpan.FromSeconds(10));
         lastObserved=now;
         bool quiet=IsSuppressed(now);
+        var input=groups as DeviceGroup[]??groups.ToArray();
+        if(TaskbarBatteryWindow.SameGrouping(previousGroups,input) && Steady(input)){
+            previousGroups=input;
+            return new(input,[],quiet);
+        }
         var next=new Dictionary<string,State>(StringComparer.Ordinal);
         var changes=new List<ConnectionChange>();
         var effective=new List<DeviceGroup>();
-        var snapshot=groups.Select(g=>(Group:g,Keys:g.Sources.Select(d=>d.Key).Append(g.Reading.Key).ToHashSet(StringComparer.Ordinal))).ToArray();
+        var snapshot=input.Select(g=>(Group:g,Keys:g.Sources.Select(d=>d.Key).Append(g.Reading.Key).ToHashSet(StringComparer.Ordinal))).ToArray();
         foreach(var item in snapshot)
         {
             var g=item.Group;var key=g.Reading.Key;var sources=item.Keys;
@@ -77,7 +83,16 @@ internal sealed class GroupedConnectionTracker
             state.Sources=sources;next[key]=state;
             effective.Add(g with{Reading=reading});
         }
-        states=next;
+        states=next;previousGroups=input;
         return new ConnectionSnapshot(effective.ToArray(),changes.ToArray(),quiet);
+    }
+    private bool Steady(DeviceGroup[] groups)
+    {
+        foreach(var g in groups){
+            if(!states.TryGetValue(g.Reading.Key,out var state) || state.Pending.HasValue ||
+               state.HeldDuringSuppression || state.Online!=Online(g))return false;
+        }
+        foreach(var g in groups)if(states[g.Reading.Key].Online)states[g.Reading.Key].Last=g.Reading;
+        return true;
     }
 }

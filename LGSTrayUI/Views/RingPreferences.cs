@@ -1,6 +1,7 @@
 using LGSTrayPrimitives;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Windows.Media;
@@ -63,7 +64,12 @@ internal sealed class RingPreferences
     public bool GameSirPassiveEnabled {get;set;}=false;
     public bool Hover {get;set;}=true;
     internal double Ms(double n)=>Animate?Math.Clamp(n,0,10000)/Math.Clamp(Speed,.5,2):0;
-    internal static Color Ink(string s, string fallback="#FFFFFF") {try{return (Color)ColorConverter.ConvertFromString(s);}catch{return (Color)ColorConverter.ConvertFromString(fallback);}}
+    internal static Color Ink(string s, string fallback="#FFFFFF") {
+        if (s is { Length: 7 or 9 } && s[0]=='#' &&
+            uint.TryParse(s.AsSpan(1),NumberStyles.AllowHexSpecifier,CultureInfo.InvariantCulture,out uint argb))
+            return Color.FromArgb(s.Length==9?(byte)(argb>>24):(byte)255,(byte)(argb>>16),(byte)(argb>>8),(byte)argb);
+        try{return (Color)ColorConverter.ConvertFromString(s);}catch{return (Color)ColorConverter.ConvertFromString(fallback);}
+    }
     internal Color Accent(TaskbarBattery d){string band=d.Offline?"Offline":d.IsFull?"Normal":d.IsActivelyCharging?"Charging":d.Level is not int n?(d.ConnectionOnly?"Normal":"Offline"):n<CriticalAt?"Critical":n<LowAt?"Low":"Normal";string fallback=band switch{"Offline"=>Offline,"Charging"=>Charging,"Critical"=>Critical,"Low"=>Low,_=>Normal};if(band is not ("Offline" or "Charging") && DeviceColors.TryGetValue(d.Key,out var legacy))fallback=legacy;return Ink(DeviceInk(d.Key,band,fallback));}
 }
 public sealed class AlertAudio {public string Sound {get;set;}="Soft Ding";public double Volume {get;set;}=65;}

@@ -85,4 +85,8 @@ public class RuntimeFeedbackTests{
         Assert.False(reading.IsFull);
         Assert.Equal(72,reading.Level);
     }
+    [Theory]
+    [InlineData("#5ba8EE")][InlineData("#005ba8Ee")][InlineData("#ABC")][InlineData("LightBlue")]
+    public void RenderColorFastPathMatchesWpf(string value) =>
+        Assert.Equal((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(value),RingPreferences.Ink(value));
 }
