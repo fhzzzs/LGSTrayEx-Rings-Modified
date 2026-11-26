@@ -61,7 +61,7 @@ internal sealed class ProviderScheduler:IDisposable
     private void Tick(object? sender,EventArgs e)=>Poll();
     internal void Rescan(string? id=null)
     {
-        foreach(var s in slots.Where(s=>id==null||s.Provider.Id==id)){s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}
+        foreach(var s in slots){if(id!=null&&s.Provider.Id!=id)continue;s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}
         Poll();
     }
     internal void RescanMany(params string[] ids){foreach(var s in slots)if(ids.Contains(s.Provider.Id)){s.Generation++;s.StablePolls=0;s.Next=DateTimeOffset.MinValue;s.Flight?.Cancel();}Poll();}
@@ -78,7 +78,10 @@ internal sealed class ProviderScheduler:IDisposable
                 if(!enabled&&s.Rows.Count>0){s.Rows=[];changed();}Publish(s);}
             if(enabled&&s.Flight==null&&now>=s.Next)_=Run(s);
         }
-        var next=slots.Where(s=>s.Enabled&&s.Flight==null).Select(s=>(s.Next-now).TotalMilliseconds).DefaultIfEmpty(1000).Min();
+        // Keep the same due-time calculation without allocating LINQ iterators on each tick.
+        double next=double.PositiveInfinity;
+        foreach(var s in slots){if(s.Enabled&&s.Flight==null)next=Math.Min(next,(s.Next-now).TotalMilliseconds);}
+        if(double.IsPositiveInfinity(next))next=1000;
         timer.Interval=TimeSpan.FromMilliseconds(Math.Clamp(next,250,2000));
     }
     internal static TimeSpan AdaptiveInterval(string id,TimeSpan period,int stablePolls)
@@ -91,7 +94,7 @@ internal sealed class ProviderScheduler:IDisposable
     private async Task Run(Slot s)
     {
         int generation=s.Generation;using var cts=new CancellationTokenSource(s.Provider.Timeout);
-        s.Flight=cts;var watch=System.Diagnostics.Stopwatch.StartNew();Publish(s);
+        s.Flight=cts;long started=System.Diagnostics.Stopwatch.GetTimestamp();Publish(s);
         Task<IReadOnlyList<TaskbarBattery>>? work=null;
         try{
             work=s.Provider.ReadAsync(cts.Token);
@@ -108,7 +111,7 @@ internal sealed class ProviderScheduler:IDisposable
             if(!disposed&&generation==s.Generation&&(s.Failures>=2||lingering&&s.Failures>0)&&s.Rows.Any(r=>r.IsConnected)){
                 s.Rows=s.Rows.Select(r=>r.WithConnection(ConnectionState.Reconnecting) with{LastKnownLevel=r.Level??r.LastKnownLevel,Level=null,ShortLabel=null,Stale=true,Charging=false}).ToArray();changed();
             }
-            s.LastMs=watch.Elapsed.TotalMilliseconds;Publish(s);
+            s.LastMs=System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;Publish(s);
             // A native I/O call may ignore cancellation. Publish the timeout
             // immediately but never start overlapping calls on that provider.
             if(lingering)try{await work!;}catch{}
