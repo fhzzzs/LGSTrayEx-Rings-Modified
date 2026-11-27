@@ -53,7 +53,8 @@ public sealed class BatteryRing : FrameworkElement
         if (shinePeriod <= 0) return;
         RingFrameClock.Remove(shineKey);
         shinePeriod = shinePhase = 0;
-        UpdateShineArc(0);
+        shineArc = null;
+        shineSegment = default;
         InvalidateVisual();
     }
 
@@ -69,6 +70,8 @@ public sealed class BatteryRing : FrameworkElement
         if (Math.Abs(period - shinePeriod) < .01) return;
         shinePeriod = period;
         shinePhase = 0;
+        shineArc = null;
+        shineSegment = default;
         shineStart = RingFrameClock.Now;
         lastShineFrame = double.NegativeInfinity;
         RingFrameClock.Set(shineKey, AdvanceShine, ambient: true);
@@ -77,20 +80,36 @@ public sealed class BatteryRing : FrameworkElement
 
     private void AdvanceShine(double now)
     {
-        if (now - lastShineFrame < 1000d / 30) return;
+        if (shinePeriod <= 0) return;
+        // A 30 Hz DispatcherTimer can arrive fractionally early. Avoid dropping
+        // every other frame just because of timer rounding.
+        if (now - lastShineFrame < 1000d / 30 - 1) return;
         lastShineFrame = now;
-        shinePhase = ((now - shineStart) % shinePeriod) / shinePeriod;
-        UpdateShineArc(Level);
+        SetShinePhase(((now - shineStart) % shinePeriod) / shinePeriod);
     }
 
-    private void UpdateShineArc(double level)
+    internal void SetShinePhase(double phase)
+    {
+        shinePhase = phase;
+        // Empty drawings can be optimized away by WPF. Explicitly invalidate
+        // when the visible segment changes, including empty -> visible.
+        if (UpdateShineArc(Level)) InvalidateVisual();
+    }
+
+    private bool UpdateShineArc(double level)
     {
         var next = level is > 0 and < 100 ? ShineSegment(shinePhase, level, Settings.ChargeLength) : default;
         if (next.end - next.start <= .01) next = default;
-        if (next == shineSegment) return;
+        if (next == shineSegment) return false;
         shineSegment = next;
-        if (next == default) shineArc?.Clear();
-        else WriteArc(shineArc ??= new StreamGeometry(), next.start, next.end, 28);
+        if (next == default) shineArc = null;
+        else {
+            var geometry = new StreamGeometry();
+            WriteArc(geometry, next.start, next.end, 28);
+            geometry.Freeze();
+            shineArc = geometry;
+        }
+        return true;
     }
     internal static (double start,double end) ShineSegment(double phase,double level,double length){double extent=Math.Clamp(level,0,100)*3.6, span=Math.Clamp(length,1,60)/175.929*360;double head=Math.Clamp(phase,0,1)*(360+span);return(Math.Clamp(head-span,0,extent),Math.Clamp(head,0,extent));}
     private static void WriteArc(StreamGeometry geometry, double start, double end, double radius)
@@ -121,7 +140,7 @@ public sealed class BatteryRing : FrameworkElement
         var from=Ink;Transition(InkProperty,from==to?0:ms,t=>SetValue(InkProperty,Mix(from,to,t)));
     }
     private void Recolor(){if(DataContext is TaskbarBattery d){AnimateInk(Settings.Accent(d),0);SyncShine();InvalidateVisual();}}
-    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e){base.OnPropertyChanged(e);if(e.Property!=DataContextProperty||e.NewValue is not TaskbarBattery d)return;var old=e.OldValue as TaskbarBattery;if(old!=null&&TaskbarBattery.SamePresentation(old,d))return;var c=Settings;bool fresh=old?.Key!=d.Key;
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e){base.OnPropertyChanged(e);if(e.Property!=DataContextProperty)return;if(e.NewValue is not TaskbarBattery d){StopShine();StopChannels();InvalidateVisual();return;}var old=e.OldValue as TaskbarBattery;if(old!=null&&TaskbarBattery.SamePresentation(old,d))return;var c=Settings;bool fresh=old?.Key!=d.Key;
         if(!d.Offline&&(fresh||old?.BarValue!=d.BarValue||old?.Offline==true))AnimateDouble(LevelProperty,d.BarValue,fresh?0:c.Ms(c.BatteryMs));
         if(fresh||old?.Offline!=d.Offline)AnimateDouble(GrayProperty,d.Offline?1:0,fresh?0:c.Ms(c.GrayMs));
         if(fresh||old==null||c.Accent(old)!=c.Accent(d))AnimateInk(c.Accent(d),fresh?0:c.Ms(d.Offline?c.GrayMs:c.ColorMs));SyncShine();InvalidateVisual();}
@@ -183,8 +202,9 @@ public sealed class BatteryRing : FrameworkElement
                 cachedGlow.Freeze();
                 glowKey = g;
             }
-            // WPF retains this geometry even when empty. The clock edits only the highlight.
-            dc.DrawGeometry(null, cachedGlow, shineArc ??= new StreamGeometry());
+            // Never submit an empty retained geometry. A fresh immutable arc is
+            // painted on each changed visible frame; all static caches remain.
+            if (shineArc != null) dc.DrawGeometry(null, cachedGlow, shineArc);
         }
         var muted=RingPreferences.Ink(c.DeviceInk(d.Key,"Offline",c.Offline));var icon=FrozenBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Icon",light)),muted,gray),ref cachedIconColor,ref cachedIconBrush);var text=FrozenBrush(Mix(RingPreferences.Ink(c.Foreground(d.Key,"Text",light)),muted,gray),ref cachedTextColor,ref cachedTextBrush);var ok=(icon.Color,Math.Clamp(c.IconStroke,.5,4));if(cachedOutline==null||outlineKey!=ok){cachedOutline=new Pen(icon,ok.Item2){LineJoin=PenLineJoin.Round,StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};cachedOutline.Freeze();outlineKey=ok;}var outline=cachedOutline;
         iconPlacement.Push(dc, c.IconScale/100, c.IconX, c.IconY, 32, 21.5);
