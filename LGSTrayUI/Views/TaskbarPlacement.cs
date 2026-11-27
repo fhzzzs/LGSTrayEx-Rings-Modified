@@ -5,6 +5,8 @@ using System.Linq;
 
 namespace LGSTrayUI;
 
+internal enum TaskbarPlacementStatus { Ready, AwaitingProbe, ProbeUnavailable, NoSpace, Fullscreen, Unavailable }
+
 /// <summary>All coordinates here are physical pixels on the primary taskbar's monitor.</summary>
 internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int Height, double Scale)
 {
@@ -26,34 +28,48 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
         return TryFit(bounds, notification, info.Monitor, scale, out placement, count);
     }
 
-    // Position the WPF strip in verified free space adjacent to the notification area.
+    // Include monitor identity, DPI, native bounds and the requested layout.
+    // A hold never crosses an Explorer restart, display change or resize.
+    internal readonly record struct Anchor(nint Bar,nint Tray,nint Monitor,PixelRect Bounds,PixelRect Notify,PixelRect Screen,
+        double Scale,int Width,int Height,int Y,int Start,int End,int LeftGap,int RightGap,int Offset);
+
     internal static bool TryReadCustom(out TaskbarPlacement placement,double logicalWidth)
+        =>ReadCustom(out placement,out _,logicalWidth)==TaskbarPlacementStatus.Ready;
+
+    internal static TaskbarPlacementStatus ReadCustom(out TaskbarPlacement placement,out Anchor anchor,double logicalWidth)
     {
-        placement=default; if(!double.IsFinite(logicalWidth)||logicalWidth<=0){return false;}
+        placement=default;anchor=default;
+        if(!double.IsFinite(logicalWidth)||logicalWidth<=0)return TaskbarPlacementStatus.NoSpace;
         var c=RingConfig.Current;
-        var bar=FindWindow("Shell_TrayWnd",null); if(bar==0||!IsWindowVisible(bar)||!GetWindowRect(bar,out var bounds)){return false;}
-        var tray=FindWindowEx(bar,0,"TrayNotifyWnd",null); if(tray==0||!GetWindowRect(tray,out var notify)){return false;}
-        var monitor=MonitorFromWindow(bar,2); var info=new MonitorInfo{Size=Marshal.SizeOf<MonitorInfo>()};
-        if(!GetMonitorInfo(monitor,ref info)||ForegroundCoversMonitor(bar,monitor,info.Monitor)){return false;}
-        double scale=GetDpiForWindow(bar)/96d;if(scale<=0){return false;}
+        var bar=FindWindow("Shell_TrayWnd",null);
+        if(bar==0||!IsWindowVisible(bar)||!GetWindowRect(bar,out var bounds))return TaskbarPlacementStatus.Unavailable;
+        var tray=FindWindowEx(bar,0,"TrayNotifyWnd",null);
+        if(tray==0||!GetWindowRect(tray,out var notify))return TaskbarPlacementStatus.Unavailable;
+        var monitor=MonitorFromWindow(bar,2);var info=new MonitorInfo{Size=Marshal.SizeOf<MonitorInfo>()};
+        if(!GetMonitorInfo(monitor,ref info))return TaskbarPlacementStatus.Unavailable;
+        if(ForegroundCoversMonitor(bar,monitor,info.Monitor))return TaskbarPlacementStatus.Fullscreen;
+        double scale=GetDpiForWindow(bar)/96d;if(scale<=0)return TaskbarPlacementStatus.Unavailable;
         int top=Math.Max(bounds.Top,info.Monitor.Top),bottom=Math.Min(bounds.Bottom,info.Monitor.Bottom),h=bottom-top;
-        if(h<24*scale||h>bounds.Right-bounds.Left){return false;}
-        int height=Math.Min((int)Math.Round(Math.Clamp(c.Size,24,52)*scale),h), width=(int)Math.Ceiling(logicalWidth*scale);
-        int offset=(int)Math.Round(Math.Clamp(c.X,-100,100)*scale), y=top+(h-height)/2+(int)Math.Round(Math.Clamp(c.Y,-20,20)*scale);
-        if(y<top||y+height>bottom){return false;}
-        int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale), end=Math.Min(notify.Left,Math.Min(bounds.Right,info.Monitor.Right));
+        if(h<24*scale||h>bounds.Right-bounds.Left)return TaskbarPlacementStatus.Unavailable;
+        int height=Math.Min((int)Math.Round(Math.Clamp(c.Size,24,52)*scale),h),width=(int)Math.Ceiling(logicalWidth*scale);
+        int offset=(int)Math.Round(Math.Clamp(c.X,-100,100)*scale),y=top+(h-height)/2+(int)Math.Round(Math.Clamp(c.Y,-20,20)*scale);
+        if(y<top||y+height>bottom)return TaskbarPlacementStatus.NoSpace;
+        int start=Math.Max(bounds.Left,info.Monitor.Left)+(int)Math.Round(48*scale),end=Math.Min(notify.Left,Math.Min(bounds.Right,info.Monitor.Right));
         int leftGap=(int)Math.Round(Math.Clamp(c.LeftGap,0,64)*scale),rightGap=(int)Math.Round(Math.Clamp(c.RightGap,0,64)*scale);
-        if (end-start < width+leftGap+rightGap) return false;
-        if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls))return false;
+        if(end-start<width+leftGap+rightGap)return TaskbarPlacementStatus.NoSpace;
+        anchor=new(bar,tray,monitor,bounds,notify,info.Monitor,scale,width,height,y,start,end,leftGap,rightGap,offset);
+        if(!TaskbarAutomationProbe.TryRead(bar,bounds,out var controls,out bool awaiting))
+            return awaiting?TaskbarPlacementStatus.AwaitingProbe:TaskbarPlacementStatus.ProbeUnavailable;
         int cursor=start;
         foreach(var r in controls)
-            if(r.Top<y+height && r.Bottom>y && r.Left<end && r.Right>start)
+            if(r.Top<y+height&&r.Bottom>y&&r.Left<end&&r.Right>start)
                 cursor=Math.Max(cursor,Math.Min((int)Math.Ceiling(r.Right),end));
         if(!FitTrailingGap(cursor,end,width,leftGap,rightGap,offset,out int x)){
             TaskbarAutomationProbe.TrailingGapOccupied();
-            return false;
+            return TaskbarPlacementStatus.NoSpace;
         }
-        placement=new(x,y,width,height,scale);return true;
+        placement=new(x,y,width,height,scale);
+        return TaskbarPlacementStatus.Ready;
     }
     // Use only the trailing free gap; never jump to the leading side or between apps.
     internal static bool TryGap(int start,int end,int width,int leftGap,int rightGap,int offset,IEnumerable<(int left,int right)> occupied,out int x){
@@ -97,6 +113,9 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
             var insideRing = new PixelPoint { X = X + Height / 2, Y = Y + Height / 2 };
             if (GetAncestor(WindowFromPoint(insideRing), 2) != FindWindow("Shell_TrayWnd", null))
                 return;
+            // Same bounds: restore z-order without requesting a resize/move.
+            SetWindowPos(window,new nint(-1),0,0,0,0,0x0001|0x0002|0x0010|0x0200);
+            return;
         }
         SetWindowPos(window, new nint(-1), X, Y, Width, Height, 0x0010 | 0x0200); // NOACTIVATE | NOOWNERZORDER
     }
@@ -123,7 +142,12 @@ internal readonly record struct TaskbarPlacement(int X, int Y, int Width, int He
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct PixelRect { public int Left, Top, Right, Bottom; }
+    internal struct PixelRect : IEquatable<PixelRect> {
+        public int Left, Top, Right, Bottom;
+        public readonly bool Equals(PixelRect other)=>Left==other.Left&&Top==other.Top&&Right==other.Right&&Bottom==other.Bottom;
+        public override readonly bool Equals(object? other)=>other is PixelRect rect&&Equals(rect);
+        public override readonly int GetHashCode()=>HashCode.Combine(Left,Top,Right,Bottom);
+    }
     [StructLayout(LayoutKind.Sequential)]
     private struct PixelPoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)]

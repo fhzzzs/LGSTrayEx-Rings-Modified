@@ -26,6 +26,7 @@ public partial class TaskbarBatteryWindow : Window
     private nint _handle;
     private readonly uint _taskbarCreated=RegisterWindowMessage("TaskbarCreated");
     private TaskbarPlacement? _position;
+    private readonly TaskbarPlacementStability _placementStability=new();
     private bool _refreshPending;
     private long _lastSettingsUpdate,_lastNotificationCheck;
     private bool _closed,_suspended;
@@ -73,9 +74,10 @@ public partial class TaskbarBatteryWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint h,int id);
     [System.Runtime.InteropServices.DllImport("user32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
     private nint HotkeyHook(nint hwnd,int msg,nint wp,nint lp,ref bool handled){
-        if(_taskbarCreated!=0&&msg==_taskbarCreated){_position=null;TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
+        if(_taskbarCreated!=0&&msg==_taskbarCreated){_position=null;_placementStability.Reset();TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
         if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}
-        if(msg is 0x007E or 0x02E0 or 0x001A){TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
+        if(msg is 0x007E or 0x02E0){_placementStability.Reset();TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
+        if(msg==0x001A){TaskbarAutomationProbe.RequestRefresh();UpdatePlacement();}
         if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.HardwareChanged();
         return 0;
     }
@@ -164,8 +166,8 @@ public partial class TaskbarBatteryWindow : Window
         }
     }
 
-    internal void PrepareSuspend(){if(_closed||_suspended)return;_suspended=true;_scanner.Suspend();_positionTimer.Stop();_stateTimer.Stop();_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(30));TaskbarAutomationProbe.Invalidate();Hide();}
-    internal void PrepareResume(){if(_closed)return;_suspended=false;_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.Resume();_positionTimer.Start();_stateTimer.Start();TaskbarAutomationProbe.Invalidate();QueueRefresh();UpdatePlacement();}
+    internal void PrepareSuspend(){if(_closed||_suspended)return;_suspended=true;_scanner.Suspend();_positionTimer.Stop();_stateTimer.Stop();_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(30));_placementStability.Reset();TaskbarAutomationProbe.Invalidate();Hide();}
+    internal void PrepareResume(){if(_closed)return;_suspended=false;_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.Resume();_positionTimer.Start();_stateTimer.Start();_placementStability.Reset();TaskbarAutomationProbe.Invalidate();QueueRefresh();UpdatePlacement();}
 
     private void Reposition(object? sender, EventArgs e)
     {
@@ -175,16 +177,24 @@ public partial class TaskbarBatteryWindow : Window
         if (_openMenu?.IsOpen == true) {
             return;
         }
-        if (!TaskbarPlacement.TryReadCustom(out var placement, _animator.Width))
-        {
-            if (IsVisible)
-            {
+        var status=TaskbarPlacement.ReadCustom(out var placement,out var anchor,_animator.Width);
+        long now=Environment.TickCount64;
+        if(status!=TaskbarPlacementStatus.Ready){
+            _placementReady=false; // Never reveal pending/new rings using a held position.
+            if(_position.HasValue&&IsVisible&&_placementStability.TryHold(status,anchor,now,out int remaining)){
+                _positionTimer.Interval=TimeSpan.FromMilliseconds(Math.Min(100,remaining));
+                return; // Keep existing HWND, z-order and animation state.
+            }
+            if(IsVisible){
+                TaskbarPlacementStability.Hidden(status);
                 if(_openMenu!=null)_openMenu.IsOpen=false;
                 Hide();
             }
-            _position = null;_placementReady=false;
+            _placementStability.Reset();
+            _position=null;
             return;
         }
+        _placementStability.Verified(anchor);
         bool changed = _position != placement;
         if (changed)
         {
@@ -199,6 +209,7 @@ public partial class TaskbarBatteryWindow : Window
             placement.Apply(_handle);
             Show();
             TaskbarPlacement.MakeToolWindow(_handle);
+            TaskbarPlacementStability.Shown();
         }
         // Explorer can raise its own topmost window while the taskbar bounds stay the same.
         // Do not raise the rings over a context menu or detail panel.

@@ -20,6 +20,8 @@ internal static class TaskbarAutomationProbe
     private static long retryAfter;
     private static int failures;
     private static long lastAttempt;
+    private static bool softDirty,refreshRequested;
+    private static long softSince;
     internal const int CaptureIntervalMs=950,SnapshotLifetimeMs=1500;
     private static long captures,cacheHits,rejected,totalMs;
     private static long occupiedCapture=-1;
@@ -34,7 +36,15 @@ internal static class TaskbarAutomationProbe
     }
     internal static string Metrics=>$"captures={Interlocked.Read(ref captures)} cache hits={Interlocked.Read(ref cacheHits)} rejected={Interlocked.Read(ref rejected)} total capture ms={Interlocked.Read(ref totalMs)}";
     internal static long RetryDelay(int failures)=>failures<=0?0:Math.Min(5000,250L*(1L<<Math.Min(4,failures)));
-    internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);}
+    // Hard invalidation (display/DPI/Explorer changes) rejects every older capture.
+    internal static void Invalidate(){Interlocked.Increment(ref generation);Interlocked.Exchange(ref retryAfter,0);softDirty=false;refreshRequested=true;}
+    // Ordinary taskbar animation/layout notifications request a new capture but
+    // cannot endlessly invalidate an in-flight query during a window drag.
+    internal static void RequestRefresh(){
+        if(!softDirty){softDirty=true;softSince=Environment.TickCount64;}
+        refreshRequested=true;
+        if(failures==0)retryAfter=0;
+    }
     internal static void TrailingGapOccupied(){
         // Hide immediately. Recheck an unchanged, occupied shell at a lower rate.
         // Schedule only once per snapshot so polling cannot perpetually postpone it.
@@ -45,13 +55,16 @@ internal static class TaskbarAutomationProbe
     internal static bool Fresh(long now,long started,long completed)
         =>completed>=started&&completed<=now&&now-started<=SnapshotLifetimeMs;
     internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls)
+        =>TryRead(bar,bounds,out controls,out _);
+    internal static bool TryRead(nint bar,TaskbarPlacement.PixelRect bounds,out Rect[] controls,out bool awaiting)
     {
-        controls=[];
+        controls=[];awaiting=false;
         long now=Environment.TickCount64;long currentGeneration=Volatile.Read(ref generation);
         if(pending?.IsCompleted==true){
             bool superseded=pending.IsCompletedSuccessfully&&pending.Result is { } oldCapture&&oldCapture.Generation!=currentGeneration;
             if(pending.IsCompletedSuccessfully&&pending.Result is { } captured&&captured.Controls.Length>0&&captured.Generation==currentGeneration&&Fresh(now,captured.Started,captured.Completed)){
                 last=captured;failures=0;retryAfter=0;
+                if(softDirty&&captured.Started>=softSince)softDirty=false;
             }else{
                 // A layout invalidation is not a provider failure; retry promptly.
                 Interlocked.Increment(ref rejected);if(superseded){failures=0;retryAfter=0;}else{failures=Math.Min(16,failures+1);retryAfter=now+RetryDelay(failures);}
@@ -61,10 +74,15 @@ internal static class TaskbarAutomationProbe
         bool matching=last!=null&&last.Bar==bar&&last.Bounds.Equals(bounds)&&last.Generation==currentGeneration&&Fresh(now,last.Started,last.Completed);
         // Keep the original 1.5 second freshness safety gate. Start fewer
         // speculative captures and invalidate immediately on a shell change.
-        if(pending==null&&now>=retryAfter&&(!matching||now-last!.Completed>=CaptureIntervalMs)&&now-lastAttempt>=250){
-            lastAttempt=now;pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
+        if(pending==null&&now>=retryAfter&&(refreshRequested||softDirty||!matching||now-last!.Completed>=CaptureIntervalMs)&&now-lastAttempt>=250){
+            lastAttempt=now;refreshRequested=false;pending=Task.Run(()=>Capture(bar,bounds,currentGeneration));
         }
-        if(!matching||last!.Controls.Length==0)return false;
+        if(!matching||softDirty||last!.Controls.Length==0){
+            // Only a transient query wait is eligible for holding an existing
+            // overlay. Actual failures/backoff must not extend stale geometry.
+            awaiting=failures==0&&(pending!=null||now>=retryAfter);
+            return false;
+        }
         Interlocked.Increment(ref cacheHits);controls=last.Controls;return true;
     }
     private static Snapshot? Capture(nint bar,TaskbarPlacement.PixelRect bounds,long captureGeneration)
