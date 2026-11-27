@@ -15,10 +15,6 @@ internal static class AsusBatteryReader
         public nint Path; public ushort Vid, Pid; public nint Serial; public ushort Release;
         public nint Manufacturer, Product; public ushort UsagePage, Usage; public int Interface; public nint Next; public int Bus;
     }
-    [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern nint hid_enumerate(ushort vid,ushort pid);
-    [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern void hid_free_enumeration(nint p);
-    [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern nint hid_open_path([MarshalAs(UnmanagedType.LPStr)]string path);
-    [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern void hid_close(nint h);
     [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern int hid_write(nint h,byte[] data,nuint len);
     [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern int hid_read_timeout(nint h,[Out]byte[] data,nuint len,int ms);
     [DllImport("hidapi",CallingConvention=CallingConvention.Cdecl)] private static extern int hid_winapi_get_container_id(nint h,out Guid id);
@@ -59,7 +55,7 @@ internal static class AsusBatteryReader
     }
     private static byte[]? Exchange(string path,byte report,byte command,byte sub,CancellationToken token,int packet=64){
         token.ThrowIfCancellationRequested();
-        var h=hid_open_path(path);if(h==0)return null;
+        var h=HidDiscovery.Shared.OpenPath(path);if(h==0)return null;
         try{
             var req=new byte[packet];req[0]=report;req[1]=command;req[2]=sub;var data=new byte[Math.Max(65,packet)];
             for(int i=0;i<16;i++)if(hid_read_timeout(h,data,(nuint)data.Length,0)<=0)break;
@@ -75,7 +71,7 @@ internal static class AsusBatteryReader
                 }
             }
             return null;
-        }finally{hid_close(h);}
+        }finally{HidDiscovery.Shared.Close(h);}
     }
     internal static ushort[] PairedModels(byte[]? reply){
         if(reply==null||reply.Length<7||reply[0]!=1||reply[1]!=0xA0)return [];
@@ -150,7 +146,7 @@ internal static class AsusBatteryReader
         finally{HidD_FreePreparsedData(data);}
     }
     private static (int Level,bool Charging)? Headset(string path,CancellationToken token){
-        token.ThrowIfCancellationRequested();var h=hid_open_path(path);if(h==0)return null;
+        token.ThrowIfCancellationRequested();var h=HidDiscovery.Shared.OpenPath(path);if(h==0)return null;
         try{
             byte[] request=new byte[64];byte[] cmd=[0xFF,0x08,0,0xFD,4,0x12,0xF1,3,0x52,1];cmd.CopyTo(request,0);
             if(hid_send_feature_report(h,request,(nuint)request.Length)<0)return null;
@@ -158,12 +154,12 @@ internal static class AsusBatteryReader
             byte[] reply=new byte[64];reply[0]=0xFF;
             int n=hid_get_feature_report(h,reply,(nuint)reply.Length);
             return n>0?DecodeHeadset(reply[..n]):null;
-        }finally{hid_close(h);}
+        }finally{HidDiscovery.Shared.Close(h);}
     }
     // Read-only inventory. Does not open a device or send a report. No serial
     // numbers, Bluetooth addresses, instance paths or container IDs exported.
     internal static string InspectHardware(){
-        var seen=new HashSet<string>(StringComparer.Ordinal);var head=hid_enumerate(0,0);
+        var seen=new HashSet<string>(StringComparer.Ordinal);var head=HidDiscovery.Shared.Enumerate(0,0);
         try{
             for(var p=head;p!=0;){
                 var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
@@ -172,7 +168,7 @@ internal static class AsusBatteryReader
                 seen.Add($"{d.Vid:X4}:{d.Pid:X4} · {product} · mi={d.Interface} · {d.UsagePage:X4}:{d.Usage:X4}");
                 if(seen.Count>=256)break;
             }
-        }finally{if(head!=0)hid_free_enumeration(head);}
+        }finally{if(head!=0)HidDiscovery.Shared.FreeEnumeration(head);}
         return seen.Count==0?"No matching HID collections":string.Join(Environment.NewLine,seen.OrderBy(x=>x,StringComparer.Ordinal));
     }
     // ASTRO A50 Gen5, verified protocol reference: HeadsetControl / HaloBattery.
@@ -186,7 +182,7 @@ internal static class AsusBatteryReader
     }
     private static int astroToken;
     internal static IReadOnlyList<TaskbarBattery> ReadAstro(CancellationToken token){
-        var rows=new List<TaskbarBattery>();var head=hid_enumerate(0x046D,0x0B1C);
+        var rows=new List<TaskbarBattery>();var head=HidDiscovery.Shared.Enumerate(0x046D,0x0B1C);
         var seen=new HashSet<string>(StringComparer.Ordinal);
         byte[]? scanReply=null;
         try{
@@ -194,7 +190,7 @@ internal static class AsusBatteryReader
                 token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
                 if(d.Vid!=0x046D||d.Pid!=0x0B1C||d.UsagePage!=0xFF32||d.Usage!=0x0074)continue;
                 var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
-                var h=hid_open_path(path);if(h==0)continue;
+                var h=HidDiscovery.Shared.OpenPath(path);if(h==0)continue;
                 try{
                     Guid id=Guid.Empty;
                     try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}catch(EntryPointNotFoundException){}
@@ -208,9 +204,9 @@ internal static class AsusBatteryReader
                         rows.Add(new TaskbarBattery(DeviceType.Headset,"ASTRO A50 Gen 5",sample.Level,sample.Charging?"充电中":"已连接",sample.Charging,DateTimeOffset.UtcNow,"astro:a50-gen5:"+identity){HardwareVendorId=0x046D,HardwareProductId=0x0B1C});
                         break;
                     }
-                }finally{hid_close(h);}
+                }finally{HidDiscovery.Shared.Close(h);}
             }
-        }finally{if(head!=0)hid_free_enumeration(head);}
+        }finally{if(head!=0)HidDiscovery.Shared.FreeEnumeration(head);}
         return rows;
     }
     private static string gameSirDiagnostics="Not scanned; experimental passive reader disabled by default";
@@ -221,14 +217,14 @@ internal static class AsusBatteryReader
         byte[]? scanBuffer=null;
         ReadOnlySpan<ushort> vendors = gameSirOnly ? [0x3537] : [0x054C,0x057E,0x2DC8];
         foreach(ushort vid in vendors){
-            var head=hid_enumerate(vid,0);
+            var head=HidDiscovery.Shared.Enumerate(vid,0);
             try{
                 for(var p=head;p!=0;){
                     token.ThrowIfCancellationRequested();var d=Marshal.PtrToStructure<HidInfo>(p);p=d.Next;
                     if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Vid:X4}:{d.Pid:X4} mi={d.Interface} page={d.UsagePage:X4}:{d.Usage:X4}");
                     if(!ControllerInputBattery.Supports(d.Vid,d.Pid)||(d.Vid==0x3537?(ControllerIdentity.IsG7(d.Vid,d.Pid)?d.UsagePage<0xFF00:d.UsagePage!=0xFFF0):d.UsagePage!=1||d.Usage is not (4 or 5)))continue;
                     var path=Marshal.PtrToStringAnsi(d.Path);if(string.IsNullOrEmpty(path))continue;
-                    var h=hid_open_path(path);
+                    var h=HidDiscovery.Shared.OpenPath(path);
                     if(h==0){
                         if(gameSirOnly&&notes.Count<32)notes.Add($"{d.Pid:X4} vendor collection open failed");
                         continue;
@@ -258,9 +254,9 @@ internal static class AsusBatteryReader
                             rows.Add(new TaskbarBattery(DeviceType.Gamepad,name,sample.Level,sample.Full?"已充满":sample.Charging?"充电中":"已连接",sample.Charging,DateTimeOffset.UtcNow,key,estimated?$"≈{sample.Level}%":null){Estimated=estimated,HardwareVendorId=d.Vid,HardwareProductId=d.Pid});
                             seen.Add(key);break;
                         }
-                    }finally{hid_close(h);}
+                    }finally{HidDiscovery.Shared.Close(h);}
                 }
-            }finally{if(head!=0)hid_free_enumeration(head);}
+            }finally{if(head!=0)HidDiscovery.Shared.FreeEnumeration(head);}
         }
         if(gameSirOnly)Volatile.Write(ref gameSirDiagnostics,notes.Count==0?"No GameSir HID collections":string.Join("; ",notes));
         return rows;
@@ -268,7 +264,7 @@ internal static class AsusBatteryReader
     internal static IReadOnlyList<TaskbarBattery> Read()=>Read(CancellationToken.None);
     internal static IReadOnlyList<TaskbarBattery> Read(CancellationToken token){
         var result=new List<TaskbarBattery>();var channels=new List<Channel>();var notes=new List<string>();
-        var head=hid_enumerate(0x0B05,0);
+        var head=HidDiscovery.Shared.Enumerate(0x0B05,0);
         try{
             for(var p=head;p!=0;){
                 token.ThrowIfCancellationRequested();
@@ -284,13 +280,13 @@ internal static class AsusBatteryReader
                     d.Pid==0x1AD0&&path.Contains("mi_02&col03",StringComparison.OrdinalIgnoreCase)&&product.Contains("Harpe",StringComparison.OrdinalIgnoreCase)||
                     PeripheralCatalog.Find(d.Pid,AsusProtocol.StrixGoHeadset)!=null&&HasFeatureChannel(path);
                 if(!candidate)continue;
-                Guid id=Guid.Empty;var h=hid_open_path(path);
+                Guid id=Guid.Empty;var h=HidDiscovery.Shared.OpenPath(path);
                 if(h!=0)try{if(hid_winapi_get_container_id(h,out id)!=0)id=Guid.Empty;}
-                catch(EntryPointNotFoundException){id=Guid.Empty;}finally{hid_close(h);}
+                catch(EntryPointNotFoundException){id=Guid.Empty;}finally{HidDiscovery.Shared.Close(h);}
                 if(d.Pid==0x1ACE&&id==Guid.Empty&&ReceiverInstance(path)==null)continue;
                 channels.Add(new(path,id,d.Pid,d.UsagePage,d.Usage,d.Interface,product));
             }
-        }finally{if(head!=0)hid_free_enumeration(head);}
+        }finally{if(head!=0)HidDiscovery.Shared.FreeEnumeration(head);}
         void Add(AsusProfile profile,string identity,(int Level,bool Charging)? reading,bool remember,ushort pid){
             string model=profile.Pid==0x1B65?"harpe-mini":profile.Name.ToLowerInvariant().Replace(' ','-');
             string key="asus:"+model+":"+identity;
