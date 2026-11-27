@@ -76,7 +76,7 @@ public partial class TaskbarBatteryWindow : Window
         if(_taskbarCreated!=0&&msg==_taskbarCreated){_position=null;TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
         if(msg==0x0312&&wp==1001){ShowSettings();handled=true;}
         if(msg is 0x007E or 0x02E0 or 0x001A){TaskbarAutomationProbe.Invalidate();UpdatePlacement();}
-        if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.RequestRescan();
+        if(msg==0x0219&&(wp==7||wp==0x8000||wp==0x8004))_scanner.HardwareChanged();
         return 0;
     }
     private void DevicesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -114,7 +114,7 @@ public partial class TaskbarBatteryWindow : Window
     }
     private void SettingsChanged(PreferenceArea areas){
         if(areas.HasFlag(PreferenceArea.Identity)){_deviceCenter.InvalidateInventory();_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(2));RefreshReadings();}
-        if(areas.HasFlag(PreferenceArea.Providers))_scanner.Poll(DateTimeOffset.UtcNow);
+        if(areas.HasFlag(PreferenceArea.Providers))_scanner.ApplyProviderSettings();
         if(areas.HasFlag(PreferenceArea.Layout)){ApplySnapshot(ReadSnapshot(),true);_animator.RefreshLayout();}
     }
     private void StateTick(object? sender,EventArgs e){if(!_closed&&!_suspended){RingConfig.RefreshSystemTheme();ApplySnapshot(ReadSnapshot());_stateTimer.Interval=TimeSpan.FromMilliseconds(_deviceCenter.HasPendingTransitions?500:1500);}}
@@ -124,7 +124,6 @@ public partial class TaskbarBatteryWindow : Window
     internal void ShowDevices(){ShowSettings();_settings?.OpenDevices();}
     private void ForgetKnown(string key){var group=_groups.FirstOrDefault(g=>g.Reading.Key==key);if(group==null||!group.Reading.Offline)return;var active=TaskbarBattery.ReadSources(_tray.LogiDevices).Concat(_scanner.Readings).Select(d=>d.Key).ToHashSet();foreach(var d in group.Sources)if(!active.Contains(d.Key))_remembered.Remove(d.Key);_deviceCenter.InvalidateInventory();SaveKnownDevices();QueueRefresh();}
     private void SaveKnownDevices(){try{DeviceInventoryStore.QueueSave(_knownPath,_remembered.Values);}catch(Exception ex){DiagnosticLogger.LogWarning("Device inventory save: "+ex.Message);}}
-    private void PollExtraDevices()=>_scanner.Poll(DateTimeOffset.UtcNow);
 
     private PhysicalDeviceSnapshot ReadSnapshot()
     {
@@ -222,7 +221,7 @@ public partial class TaskbarBatteryWindow : Window
         b.Unloaded+=(_,_)=>{if(menu.IsOpen)menu.IsOpen=false;};
         return b;
     }
-    internal void Rescan(){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.RequestRescan();PollExtraDevices();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
+    internal void Rescan(){_deviceCenter.Suppress(DateTimeOffset.UtcNow,TimeSpan.FromSeconds(15));_scanner.RequestRescan();if(_tray.RediscoverDevicesCommand.CanExecute(null))_tray.RediscoverDevicesCommand.Execute(null);}
 
     private void ForgetOffline(object sender, RoutedEventArgs e)
     {

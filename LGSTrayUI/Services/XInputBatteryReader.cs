@@ -26,7 +26,7 @@ internal static class XInputBatteryReader
     [DllImport("xinput1_4.dll", ExactSpelling = true)]
     private static extern uint XInputGetBatteryInformation(uint index, byte deviceType, out BatteryInfo battery);
 
-    public static IEnumerable<TaskbarBattery> Read()
+    public static IReadOnlyList<TaskbarBattery> Read()
     {
         var result = new List<TaskbarBattery>();
         var observed = new List<string>();

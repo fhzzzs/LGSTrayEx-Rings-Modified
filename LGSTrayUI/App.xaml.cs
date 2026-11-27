@@ -42,9 +42,15 @@ public partial class App : Application
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
     private TaskbarBatteryWindow? _taskbarBatteries;
     private DeviceScanCoordinator? _scanner;
-    private int _resumeInFlight,_powerSuspended;
+    private readonly WakeRecovery _wakeRecovery;
+    private long _wakeSequence;
     private IPublisher<SystemSuspendingMessage>? _suspendPublisher;
     private IPublisher<SystemResumingMessage>? _resumePublisher;
+
+    public App()
+    {
+        _wakeRecovery = new WakeRecovery(RecoverAfterWakeAsync, _startupCancellation.Token);
+    }
 
     /// <summary>
     /// Gets whether logging is enabled (--log flag).
@@ -183,7 +189,7 @@ public partial class App : Application
 
         // Create hidden window for Modern Standby power notifications
         // This works on both S3 (traditional sleep) and S0 (Modern Standby) systems
-        _powerWindow = new PowerNotificationWindow(this, _suspendPublisher, _resumePublisher);
+        _powerWindow = new PowerNotificationWindow(this);
         // Create HWND and register power notifications without a show/hide render.
         new System.Windows.Interop.WindowInteropHelper(_powerWindow).EnsureHandle();
 
@@ -222,26 +228,44 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Handle system wake - give USB devices time to stabilize, then rediscover.
-    /// Called exclusively by WM_POWERBROADCAST (covers both S3 and Modern Standby).
+    /// Pause device scanning once for the suspend notifications from Windows.
     /// </summary>
-    internal void HandleSystemSuspend(){
-        if(_exitRequested||Interlocked.Exchange(ref _powerSuspended,1)!=0)return;
-        _suspendPublisher?.Publish(new SystemSuspendingMessage());
-        if(Dispatcher.CheckAccess())_taskbarBatteries?.PrepareSuspend();
-        else if(!Dispatcher.HasShutdownStarted)Dispatcher.BeginInvoke(new Action(()=>_taskbarBatteries?.PrepareSuspend()));
-    }
-    public async Task HandleSystemResumeAsync()
+    internal void HandleSystemSuspend()
     {
-        if(_exitRequested||Interlocked.Exchange(ref _resumeInFlight,1)!=0)return;
-        Interlocked.Exchange(ref _powerSuspended,0);
+        // SystemEvents can run on another thread. A suspend queued before a
+        // subsequent wake must not put the scanner back to sleep.
+        if (!Dispatcher.CheckAccess())
+        {
+            long sequence = Interlocked.Read(ref _wakeSequence);
+            if (!Dispatcher.HasShutdownStarted)
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (sequence == _wakeSequence) HandleSystemSuspend();
+                }));
+            return;
+        }
+        if (_exitRequested || !_wakeRecovery.Suspend()) return;
+        _suspendPublisher?.Publish(new SystemSuspendingMessage());
+        _taskbarBatteries?.PrepareSuspend();
+    }
+
+    public Task HandleSystemResumeAsync()
+    {
+        if (!Dispatcher.CheckAccess())
+            return Dispatcher.HasShutdownStarted ? Task.CompletedTask : Dispatcher.InvokeAsync(HandleSystemResumeAsync).Task.Unwrap();
+        Interlocked.Increment(ref _wakeSequence);
+        return _exitRequested ? Task.CompletedTask : _wakeRecovery.ResumeAsync();
+    }
+
+    private async Task RecoverAfterWakeAsync(CancellationToken token)
+    {
         try
         {
-            // Wait 2 seconds for USB devices to fully wake and stabilize
-            // This delay allows HID devices to enumerate and become responsive
-            await Task.Delay(2000,_startupCancellation.Token);
-            if(_exitRequested)return;
-            await Dispatcher.InvokeAsync(()=>_taskbarBatteries?.PrepareResume());
+            _resumePublisher?.Publish(new SystemResumingMessage());
+            await Task.Delay(2000, token);
+            token.ThrowIfCancellationRequested();
+            if (_exitRequested) return;
+            _taskbarBatteries?.PrepareResume();
 
             // Get device managers from DI container
             if (_deviceManagers == null)
@@ -259,15 +283,18 @@ public partial class App : Application
             DiagnosticLogger.Log("Triggering rediscovery on all device managers");
             foreach (var manager in _deviceManagers)
             {
+                token.ThrowIfCancellationRequested();
                 try{await manager.RediscoverDevices().WaitAsync(TimeSpan.FromSeconds(8),_startupCancellation.Token);}
+                catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
                 catch(Exception ex){DiagnosticLogger.LogWarning($"Resume rediscovery {manager.GetType().Name}: {ex.Message}");}
                 if(_exitRequested)return;
             }
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
             DiagnosticLogger.LogError($"Error during system resume handling: {ex.Message}");
-        }finally{Interlocked.Exchange(ref _resumeInFlight,0);}
+        }
     }
 
     internal async void RequestExit()
@@ -464,8 +491,6 @@ internal class PowerNotificationWindow : Window
 {
     private IntPtr _notificationHandle = IntPtr.Zero;
     private readonly App _app;
-    private readonly IPublisher<SystemSuspendingMessage> _suspendPublisher;
-    private readonly IPublisher<SystemResumingMessage> _resumePublisher;
 
     // P/Invoke declarations for power management
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
@@ -479,14 +504,9 @@ internal class PowerNotificationWindow : Window
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
     private const int PBT_APMSUSPEND = 0x0004;
 
-    public PowerNotificationWindow(
-        App app,
-        IPublisher<SystemSuspendingMessage> suspendPublisher,
-        IPublisher<SystemResumingMessage> resumePublisher)
+    public PowerNotificationWindow(App app)
     {
         _app = app;
-        _suspendPublisher = suspendPublisher;
-        _resumePublisher = resumePublisher;
 
         // Create hidden window
         Width = 0;
@@ -548,9 +568,6 @@ internal class PowerNotificationWindow : Window
             else if (powerEvent == PBT_APMRESUMEAUTOMATIC)
             {
                 DiagnosticLogger.Log("System resumed (WM_POWERBROADCAST)");
-
-                // Send message to resume notifications
-                _resumePublisher.Publish(new SystemResumingMessage());
 
                 // Call the app's resume handler asynchronously
                 _ = _app.HandleSystemResumeAsync();
